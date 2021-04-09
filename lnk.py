@@ -16,9 +16,13 @@ import ctypes, sys
 /cygdrive/c/Windows/WinSxS/amd64_dual_rdvgwddmdx11.inf_31bf3856ad364e35_10.0.17763.134_none_79f739fa0dcd1ce8/opencl.dll
 """
 
-dll = r'C:\Users\F074018\Anaconda3\Library\bin\OpenCL.dll'
-dll = r'c:\Windows\System32\OpenCL.DLL'
-#dll = r'c:\Windows\SysWOW64\OpenCL.DLL' # OSError: [WinError 193] %1 n’est pas une application Win32 valide
+if sys.platform == 'linux':
+    dll = r'/usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0'
+    # /opt/kalray/accesscore/lib/libOpenCL.so.2.5.0
+else:
+    dll = r'C:\Users\F074018\Anaconda3\Library\bin\OpenCL.dll'
+    dll = r'c:\Windows\System32\OpenCL.DLL'
+    #dll = r'c:\Windows\SysWOW64\OpenCL.DLL' # OSError: [WinError 193] %1 n’est pas une application Win32 valide
 
 ######################
 
@@ -512,7 +516,7 @@ if True:
 	#
 	num_platforms = cl_uint() # 0
 	r = clGetPlatformIDs(0,None, _R(num_platforms))
-	assert r == 0
+	assert r == 0 ### ou -1001 : no ICD
 	assert num_platforms.value > 0
 	platforms_vec = (cl_platform_id * num_platforms.value)() # ctypes.POINTER(ctypes.c_char)
 	r = clGetPlatformIDs(num_platforms.value, platforms_vec, None)
