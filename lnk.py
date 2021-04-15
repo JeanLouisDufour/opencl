@@ -17,12 +17,13 @@ import ctypes, sys
 """
 
 if sys.platform == 'linux':
-    dll = r'/usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0'
-    # /opt/kalray/accesscore/lib/libOpenCL.so.2.5.0
+	dll = r'/usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0'
+	# dll = r'/opt/kalray/accesscore/lib/libOpenCL.so.2.5.0' # OSError: ...
+	# dll = r'/usr/lib/x86_64-linux-gnu/hwloc/hwloc_opencl.so' # OSError: /usr/lib/x86_64-linux-gnu/hwloc/hwloc_opencl.so: undefined symbol: hwloc_obj_add_info
 else:
-    dll = r'C:\Users\F074018\Anaconda3\Library\bin\OpenCL.dll'
-    dll = r'c:\Windows\System32\OpenCL.DLL'
-    #dll = r'c:\Windows\SysWOW64\OpenCL.DLL' # OSError: [WinError 193] %1 n’est pas une application Win32 valide
+	dll = r'C:\Users\F074018\Anaconda3\Library\bin\OpenCL.dll'
+	dll = r'c:\Windows\System32\OpenCL.DLL'
+	# dll = r'c:\Windows\SysWOW64\OpenCL.DLL' # OSError: [WinError 193] %1 n’est pas une application Win32 valide
 
 ######################
 
@@ -383,7 +384,7 @@ for _l in api:
 	_fn = _l[0]
 	_fd = getattr(mylib, _fn, None)
 	if _fd is None:
-		print(f"OpenCL WARNING : {fn} not in {mylib}")
+		print(f"OpenCL WARNING : {_fn} not in {mylib}")
 	elif len(_l) > 1:
 		_fd.restype = _l[1]
 		_fd.argtypes = _l[2:]
@@ -470,13 +471,21 @@ buf_sz_REF = _R(buf_sz)
 ndevs = ctypes.c_uint()
 ndevs_REF = _R(ndevs)
 
+CL_INVALID_PLATFORM = -32
+
 def gatherPlatformInfo(p_addr):
 	#
 	for k_i,k in enumerate(cl_platform_info_TAGS, start=cl_platform_info_START):
 		r = clGetPlatformInfo(p_addr, k_i, 1024, buf1024, buf_sz_REF)
-		assert r == 0 and buf_sz.value > 0
-		s = buf1024.value[:buf_sz.value].decode('cp1250')
-		print(f'{k} : {s}')
+		if r == 0:
+			assert buf_sz.value > 0
+			s = buf1024.value[:buf_sz.value].decode('cp1250')
+			print(f'{k} : {s}')
+		elif r == CL_INVALID_PLATFORM:
+			print("CL_INVALID_PLATFORM")
+			return
+		else:
+			assert False        
 	r = clGetDeviceIDs(p_addr, CL_DEVICE_TYPE_ALL, 0, None, ndevs_REF)
 	assert r == 0, r
 	assert ndevs.value > 0
@@ -508,15 +517,15 @@ def gatherPlatformInfo(p_addr):
 	#
 #	global mylib
 if True:
-	
+	2+2
 
-	# None should be used as the NULL pointer
+# None should be used as the NULL pointer
 
 
-	#
-	num_platforms = cl_uint() # 0
-	r = clGetPlatformIDs(0,None, _R(num_platforms))
-	assert r == 0 ### ou -1001 : no ICD
+#
+num_platforms = cl_uint() # 0
+ICD_status = clGetPlatformIDs(0,None, _R(num_platforms)) ## 0 ou -1001 : no ICD
+if ICD_status == 0:
 	assert num_platforms.value > 0
 	platforms_vec = (cl_platform_id * num_platforms.value)() # ctypes.POINTER(ctypes.c_char)
 	r = clGetPlatformIDs(num_platforms.value, platforms_vec, None)
@@ -526,7 +535,13 @@ if True:
 		print(f'************* platform {p} *************')
 		p_addr = platforms_vec[p]
 		platforms_inf[p] = gatherPlatformInfo(p_addr)
-		
+elif ICD_status == -1001:
+    platform_inf = gatherPlatformInfo(None)
+    
+    
+else:
+    printf(f"ERREUR : bad return value of clGetPlatformIDs : {ICD_status}")
+    assert False
 		
 if __name__ == "__main__": # vecAdd
 	from math import sin, cos, ceil
