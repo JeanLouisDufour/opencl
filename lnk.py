@@ -221,7 +221,7 @@ if True: # mylib is None or mylib._name != dll:
 	
 #
 intptr_t = ctypes.c_int64
-_P = ctypes.POINTER
+Ptr = _P = ctypes.POINTER
 # base types
 cl_int = ctypes.c_int32
 cl_long = ctypes.c_int64
@@ -463,7 +463,7 @@ clReleaseMemObject = mylib.clReleaseMemObject
 clReleaseMemObject.restype = cl_int
 clReleaseMemObject.argtypes = [cl_mem]
 """
-_R = ctypes.byref
+Ref = _R = ctypes.byref
 
 buf1024 = ctypes.create_string_buffer(1024)
 buf_sz = size_t()
@@ -513,14 +513,177 @@ def gatherPlatformInfo(p_addr):
 
 #mylib = None
 
-#def clinfo(dll = r'c:\Windows\System32\OpenCL.DLL'):
+def get_kernels(ksrc):
+	""
+	kl = []
 	#
-#	global mylib
-if True:
-	2+2
+	i = 0
+	ki = ksrc.find('__kernel',i)
+	while ki >= 0:
+		j = ki+8 # len('__kernel')
+		assert ksrc[j].isspace()
+		j += 1
+		while ksrc[j].isspace(): j+=1
+		assert ksrc[j:j+4] == 'void'
+		j = j+4
+		assert ksrc[j].isspace()
+		# j pointe sur les espaces avant le nom
+		open_par_i = ksrc.index('(', j+1)
+		kname = ksrc[j:open_par_i].strip()
+		assert kname.isidentifier()
+		print(kname)
+		close_par_i = ksrc.index(')', open_par_i+1)
+		open_curpar_i = ksrc.index('{', close_par_i+1)
+		assert open_curpar_i == close_par_i+1 or ksrc[close_par_i+1:open_curpar_i].isspace()
+		params = ksrc[open_par_i+1:close_par_i].split(',')
+		params = [p.strip() for p in params]
+		kl.append([kname,ki, params])
+		#
+		i = open_curpar_i+1
+		ki = ksrc.find('__kernel',i)
+	return kl
 
-# None should be used as the NULL pointer
+def kernel_initiate(ksrc, arg_types, arg_kinds):
+	""" exemple sur vecadd :
+		__kernel void vecAdd(  __global FLOAT *a,  
+                       __global FLOAT *b, 
+                       __global FLOAT *c,       
+                       const unsigned int n)
+	ksrc = ...
+	n = 21
+	d = kernel_initiate(ksrc, [(ctypes.c_float * n), (ctypes.c_float * n), (ctypes.c_float * n), cl_uint],"RRWC")
+	"""
+	# seuls les types a*b ont un attr _length_
+	assert len(arg_types) == len(arg_kinds)
+	kl = get_kernels(ksrc)
+	[kname,_,kargs] = kl[0]
+	assert len(kargs) == len(arg_types)
+	#
+	"""
+	nb_bytes = n * 4   ## ctypes.sizeof(h_a)
+	h_a = (ctypes.c_float * n)(*[sin(i)*sin(i) for i in range(n)])
+	h_b = (ctypes.c_float * n)(*[cos(i)*cos(i) for i in range(n)])
+	read_arrays = [h_a, h_b]
+	h_c = (ctypes.c_float * n_out)() # all 0.0
+	write_arrays = [h_c]
+	"""
+	e = cl_int(-1000)
+	e_REF = _R(e)
+	kernelSource = (ctypes.c_char_p * 1)(ksrc.encode('cp1250'))
+	cpPlatform = (cl_platform_id * 1)()
+	err = clGetPlatformIDs(1, cpPlatform, None)
+	assert err == 0
+	device_id = (cl_device_id * 1)()
+	err = clGetDeviceIDs(cpPlatform[0], CL_DEVICE_TYPE_GPU, 1, device_id, None)
+	assert err == 0
+	context = clCreateContext(None, 1, device_id, NULL_CALLBACK_context, None, e_REF)
+	assert e.value == 0
+	queue = clCreateCommandQueue(context, device_id[0], 0, e_REF);
+	assert e.value == 0
+	program = clCreateProgramWithSource(context, 1, kernelSource, None, e_REF)
+	assert e.value == 0
+	err = clBuildProgram(program, 0, None, None, NULL_CALLBACK_program, None)
+	assert err == 0
+	kernel = clCreateKernel(program, kname.encode('cp1250'), e_REF) # b"vecAdd"
+	assert e.value == 0
+	"""
+	d_a = clCreateBuffer(context, CL_MEM_READ_ONLY, nb_bytes, None, e_REF)
+	assert e.value == 0
+	d_b = clCreateBuffer(context, CL_MEM_READ_ONLY, nb_bytes, None, e_REF)
+	assert e.value == 0
+	read_buffers = [d_a,d_b]
+	d_c = clCreateBuffer(context, CL_MEM_WRITE_ONLY, n_out*4, None, e_REF)
+	assert e.value == 0
+	write_buffers = [d_c]
+	if False: # original
+		err  = clEnqueueWriteBuffer(queue, d_a, CL_TRUE, 0, nb_bytes, h_a, 0, None, None)
+		err |= clEnqueueWriteBuffer(queue, d_b, CL_TRUE, 0, nb_bytes, h_b, 0, None, None)
+		assert err == 0
+	err   = clSetKernelArg(kernel, 0, ctypes.sizeof(cl_mem), _R(cl_mem(d_a)))
+	err  |= clSetKernelArg(kernel, 1, ctypes.sizeof(cl_mem), _R(cl_mem(d_b)))
+	err  |= clSetKernelArg(kernel, 2, ctypes.sizeof(cl_mem), _R(cl_mem(d_c)))
+	err  |= clSetKernelArg(kernel, 3, ctypes.sizeof(cl_uint), _R(cl_uint(n)))
+	assert err == 0 ## -38 == CL_INVALID_MEM_OBJECT
+	"""
+	err = 0
+	params = []
+	#read_arrays, write_arrays, read_buffers, write_buffers = [],[],[],[]
+	for ai, (at,ak) in enumerate(zip(arg_types,arg_kinds)):
+		if hasattr(at, '_length_'): # array
+			assert ak in 'RW'
+			d_k = CL_MEM_READ_ONLY if ak == 'R' else CL_MEM_WRITE_ONLY
+			d_x = clCreateBuffer(context, d_k, ctypes.sizeof(at), None, e_REF)
+			assert e.value == 0 and d_x > 0
+			d_obj = cl_mem(d_x)
+			h_obj = at() # liaison plus tard par clEnqueueWriteBuffer ou ...Read...
+		else:
+			assert ak == 'C'
+			h_obj = d_obj = at()
+		err |= clSetKernelArg(kernel, ai, ctypes.sizeof(d_obj), Ref(d_obj))
+		params.append([h_obj, d_obj])
+	assert err == 0
+	return {
+		'src': ksrc, 'arg_types': arg_types, 'arg_kinds': arg_kinds,
+		'name': kname, 'args': kargs,
+		'platform': cpPlatform[0], 'device': device_id[0],
+		'context': context, 'queue': queue,
+		'program': program, 'kernel': kernel,
+		'params' : params,
+		 }
+	
 
+def kernel_run(d,n,eff_params):
+	"""
+	from math import sin, cos
+	n = 21
+	x_a = [sin(i)*sin(i) for i in range(n)]
+	x_b = [cos(i)*cos(i) for i in range(n)]
+	x_c = [None]*n
+	kernel_run(d,21,[x_a,x_b,x_c,n])
+	"""
+	params = d['params']
+	assert len(params) == len(eff_params)
+	arg_kinds = d['arg_kinds']
+	queue = d['queue']
+	err = 0
+	for p_k, (p_h, p_d), p_eff in zip(arg_kinds, params, eff_params):
+		if p_k == 'R':
+			assert len(p_eff) == p_h._length_
+			for i in range(len(p_eff)):
+				p_h[i] = p_eff[i]
+			err |= clEnqueueWriteBuffer(queue, p_d, CL_TRUE, 0, ctypes.sizeof(p_h), p_h, 0, None, None)
+		elif p_k == 'C':
+			p_h.value == p_eff
+	assert err == 0
+	kernel = d['kernel']
+	globalSize = (size_t * 1)(n)
+	err = clEnqueueNDRangeKernel(queue, kernel, len(globalSize), None, globalSize, None, 0, None, None)
+	assert err == 0
+	err = clFinish(queue)
+	assert err == 0
+	for p_k, (p_h, p_d), p_eff in zip(arg_kinds, params, eff_params):
+		if p_k == 'W':
+			assert len(p_eff) == p_h._length_
+			err |= clEnqueueReadBuffer(queue, p_d, CL_TRUE, 0, ctypes.sizeof(p_h), p_h, 0, None, None)
+			for i in range(len(p_eff)):
+				p_eff[i] = p_h[i]
+	assert err == 0
+	
+def kernel_terminate(d):
+	""
+	err = 0
+	for h_x, d_x in d['params']:
+		if h_x != d_x:
+			err |= clReleaseMemObject(d_x)
+	assert err == 0
+	err = clReleaseKernel(d['kernel'])
+	assert err == 0
+	err = clReleaseProgram(d['program'])
+	assert err == 0
+	err = clReleaseCommandQueue(d['queue'])
+	assert err == 0
+	err = clReleaseContext(d['context'])
+	assert err == 0
 
 #
 num_platforms = cl_uint() # 0
@@ -559,21 +722,48 @@ if __name__ == "__main__": # vecAdd
 "    int id = get_global_id(0);                                  \n"
 "                                                                \n"
 "    //Make sure we do not go out of bounds                      \n"
-"    if (id < n)                                                 \n"
+"    if (id < 10)                                                 \n"
 "        c[id] = a[id] + b[id];                                  \n"
+"    else c[id] = id;                                  \n"
 "}                                                               \n"
 )
-	n = 8
+	ksrc = """
+#define FLOAT float                                     
+__kernel void vecAdd(  __global FLOAT *a,  
+                       __global FLOAT *b, 
+                       __global FLOAT *c,       
+                       const unsigned int n)    
+{                                               
+    //Get our global thread ID                  
+    int id = get_global_id(0);                  
+                                                
+    //Make sure we do not go out of bounds      
+    if (id < 10)                               
+        c[id] = a[id] + b[id];                 
+    else c[id] = id;                        
+}                                            
+"""
+	kl = get_kernels(ksrc)
 	
+	n = 21
+	
+	n_out = n+1
+	
+	work_dim = 1
 	## Number of work items in each local work group
-	localSize = 64
+	#localSize = 64
+	localSize = (size_t * work_dim)(64)
 	## Number of total work items - localSize must be devisor
-	globalSize = ceil(n/localSize)*localSize;
+	#globalSize = ceil(n/localSize)*localSize
+	globalSize = (size_t * work_dim)(ceil(n/localSize[0])*localSize[0])
+	global_size = (size_t * work_dim)(n)
 	
-	nb_bytes = n * 4
+	nb_bytes = n * 4   ## ctypes.sizeof(h_a)
 	h_a = (ctypes.c_float * n)(*[sin(i)*sin(i) for i in range(n)])
 	h_b = (ctypes.c_float * n)(*[cos(i)*cos(i) for i in range(n)])
-	h_c = (ctypes.c_float * n)() # all 0.0
+	read_arrays = [h_a, h_b]
+	h_c = (ctypes.c_float * n_out)() # all 0.0
+	write_arrays = [h_c]
 	e = cl_int(-1000)
 	e_REF = _R(e)
 	kernelSource = (ctypes.c_char_p * 1)(ksrc.encode('cp1250'))
@@ -597,30 +787,56 @@ if __name__ == "__main__": # vecAdd
 	assert e.value == 0
 	d_b = clCreateBuffer(context, CL_MEM_READ_ONLY, nb_bytes, None, e_REF)
 	assert e.value == 0
-	d_c = clCreateBuffer(context, CL_MEM_WRITE_ONLY, nb_bytes, None, e_REF)
+	read_buffers = [d_a,d_b]
+	d_c = clCreateBuffer(context, CL_MEM_WRITE_ONLY, n_out*4, None, e_REF)
 	assert e.value == 0
-	err  = clEnqueueWriteBuffer(queue, d_a, CL_TRUE, 0, nb_bytes, h_a, 0, None, None)
-	err |= clEnqueueWriteBuffer(queue, d_b, CL_TRUE, 0, nb_bytes, h_b, 0, None, None)
-	assert err == 0
+	write_buffers = [d_c]
+	if False: # original
+		err  = clEnqueueWriteBuffer(queue, d_a, CL_TRUE, 0, nb_bytes, h_a, 0, None, None)
+		err |= clEnqueueWriteBuffer(queue, d_b, CL_TRUE, 0, nb_bytes, h_b, 0, None, None)
+		assert err == 0
 	err   = clSetKernelArg(kernel, 0, ctypes.sizeof(cl_mem), _R(cl_mem(d_a)))
 	err  |= clSetKernelArg(kernel, 1, ctypes.sizeof(cl_mem), _R(cl_mem(d_b)))
 	err  |= clSetKernelArg(kernel, 2, ctypes.sizeof(cl_mem), _R(cl_mem(d_c)))
 	err  |= clSetKernelArg(kernel, 3, ctypes.sizeof(cl_uint), _R(cl_uint(n)))
 	assert err == 0 ## -38 == CL_INVALID_MEM_OBJECT
-	err = clEnqueueNDRangeKernel(queue, kernel, 1, None, _R(size_t(globalSize)), _R(size_t(localSize)), 0, None, None)
+	
+	### BEGIN COPRO
+	
+	if True: # nouveau
+		err = 0
+		for buf,arr in zip(read_buffers,read_arrays):
+			err |= clEnqueueWriteBuffer(queue, buf, CL_TRUE, 0, ctypes.sizeof(arr), arr, 0, None, None)
+	else:
+		err  = clEnqueueWriteBuffer(queue, d_a, CL_TRUE, 0, nb_bytes, h_a, 0, None, None)
+		err |= clEnqueueWriteBuffer(queue, d_b, CL_TRUE, 0, nb_bytes, h_b, 0, None, None)
+	assert err == 0
+	#err = clEnqueueNDRangeKernel(queue, kernel, 1, None, _R(size_t(globalSize)), _R(size_t(localSize)), 0, None, None)
+	#err = clEnqueueNDRangeKernel(queue, kernel, work_dim, None, globalSize, localSize, 0, None, None)
+	err = clEnqueueNDRangeKernel(queue, kernel, len(globalSize), None, globalSize, None, 0, None, None)
 	assert err == 0
 	err = clFinish(queue)
 	assert err == 0
-	###
-	err = clEnqueueReadBuffer(queue, d_c, CL_TRUE, 0, nb_bytes, h_c, 0, None, None)
+	if True:
+		err = 0
+		for buf,arr in zip(write_buffers,write_arrays):
+			err |= clEnqueueReadBuffer(queue, buf, CL_TRUE, 0, ctypes.sizeof(arr), arr, 0, None, None)
+	else:
+		err = clEnqueueReadBuffer(queue, d_c, CL_TRUE, 0, nb_bytes, h_c, 0, None, None)
 	assert err == 0
-	### attendre ou pas ?
-	delta = [h_c[i]-1 for i in range(n)]
+	
+	### END COPRO
+	
+	delta = [h_c[i]-1 for i in range(n_out)]
 	print(delta)
 	###
-	err  = clReleaseMemObject(d_a)
-	err |= clReleaseMemObject(d_b)
-	err |= clReleaseMemObject(d_c)
+	if True:
+		err = 0
+		for d_x in read_buffers + write_buffers: err |= clReleaseMemObject(d_x)
+	else:
+		err  = clReleaseMemObject(d_a)
+		err |= clReleaseMemObject(d_b)
+		err |= clReleaseMemObject(d_c)
 	assert err == 0
 	err = clReleaseKernel(kernel)
 	assert err == 0
