@@ -214,6 +214,12 @@ CL_MEM_HOST_WRITE_ONLY =                     (1 << 7)
 CL_MEM_HOST_READ_ONLY  =                     (1 << 8)
 CL_MEM_HOST_NO_ACCESS  =                     (1 << 9)
 
+## cl_program_build_info */
+CL_PROGRAM_BUILD_STATUS                   =  0x1181
+CL_PROGRAM_BUILD_OPTIONS                  =  0x1182
+CL_PROGRAM_BUILD_LOG                      =  0x1183
+CL_PROGRAM_BINARY_TYPE                    =  0x1184
+
 #### END cl.h ######
 
 if True: # mylib is None or mylib._name != dll:
@@ -248,6 +254,7 @@ cl_mem_flags = cl_bitfield
 cl_platform_id = ctypes.c_void_p # ctypes.POINTER(void)
 cl_platform_info = cl_uint
 cl_program = ctypes.c_void_p
+cl_program_build_info = cl_uint
 
 ## bug ? None not accepted as a CFUNCTYPE
 
@@ -344,7 +351,7 @@ api = [
 # clGetPipeInfo
 ["clGetPlatformIDs", 		cl_int,		cl_uint, _P(cl_platform_id), _P(cl_uint)],
 ["clGetPlatformInfo",		cl_int,		cl_platform_id, cl_platform_info, size_t, ctypes.c_void_p, _P(size_t)],
-# clGetProgramBuildInfo
+["clGetProgramBuildInfo",	cl_int,		cl_program, cl_device_id, cl_program_build_info, size_t, ctypes.c_void_p, _P(size_t)],
 # clGetProgramInfo
 # clGetSamplerInfo
 # clGetSupportedImageFormats
@@ -471,6 +478,7 @@ buf_sz_REF = _R(buf_sz)
 ndevs = ctypes.c_uint()
 ndevs_REF = _R(ndevs)
 
+CL_BUILD_PROGRAM_FAILURE = -11
 CL_INVALID_PLATFORM = -32
 
 def gatherPlatformInfo(p_addr):
@@ -531,7 +539,7 @@ def get_kernels(ksrc):
 		open_par_i = ksrc.index('(', j+1)
 		kname = ksrc[j:open_par_i].strip()
 		assert kname.isidentifier()
-		print(kname)
+		#print(kname)
 		close_par_i = ksrc.index(')', open_par_i+1)
 		open_curpar_i = ksrc.index('{', close_par_i+1)
 		assert open_curpar_i == close_par_i+1 or ksrc[close_par_i+1:open_curpar_i].isspace()
@@ -557,7 +565,7 @@ def kernel_initiate(ksrc, arg_types, arg_kinds):
 	assert len(arg_types) == len(arg_kinds)
 	kl = get_kernels(ksrc)
 	[kname,_,kargs] = kl[0]
-	assert len(kargs) == len(arg_types)
+	assert len(kargs) == len(arg_types), (len(kargs) , len(arg_types))
 	#
 	"""
 	nb_bytes = n * 4   ## ctypes.sizeof(h_a)
@@ -583,7 +591,38 @@ def kernel_initiate(ksrc, arg_types, arg_kinds):
 	program = clCreateProgramWithSource(context, 1, kernelSource, None, e_REF)
 	assert e.value == 0
 	err = clBuildProgram(program, 0, None, None, NULL_CALLBACK_program, None)
-	assert err == 0
+	if err == CL_BUILD_PROGRAM_FAILURE:
+		"""
+		size_t log_size;
+    clGetProgramBuildInfo(program, devices_id[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+
+    // Allocate memory for the log
+    char *log = (char *) malloc(log_size);
+
+    // Get the log
+    clGetProgramBuildInfo(program, devices_id[0], CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+
+    // Print the log
+    printf("%s\n", log);
+		"""
+		log_size = size_t()
+		err = clGetProgramBuildInfo(program, device_id[0], CL_PROGRAM_BUILD_LOG, 0, None, Ref(log_size))
+		assert err == 0
+		log = ctypes.create_string_buffer(log_size.value)
+		err = clGetProgramBuildInfo(program, device_id[0], CL_PROGRAM_BUILD_LOG, log_size, log, None)
+		assert err == 0
+		d = {
+			'src': ksrc, 'arg_types': arg_types, 'arg_kinds': arg_kinds,
+			'name': kname, 'args': kargs,
+			'platform': cpPlatform[0], 'device': device_id[0],
+			'context': context, 'queue': queue,
+			'program': program,
+			'error': log.value.decode('cp1250')
+			}
+		kernel_terminate(d)
+		return d
+	else:
+		assert err == 0, err
 	kernel = clCreateKernel(program, kname.encode('cp1250'), e_REF) # b"vecAdd"
 	assert e.value == 0
 	"""
@@ -610,8 +649,11 @@ def kernel_initiate(ksrc, arg_types, arg_kinds):
 	#read_arrays, write_arrays, read_buffers, write_buffers = [],[],[],[]
 	for ai, (at,ak) in enumerate(zip(arg_types,arg_kinds)):
 		if hasattr(at, '_length_'): # array
-			assert ak in 'RW'
-			d_k = CL_MEM_READ_ONLY if ak == 'R' else CL_MEM_WRITE_ONLY
+			assert ak in 'RWX'
+			d_k = CL_MEM_READ_ONLY  if ak == 'R' else \
+				  CL_MEM_WRITE_ONLY if ak == 'W' else \
+				  CL_MEM_READ_WRITE
+				  
 			d_x = clCreateBuffer(context, d_k, ctypes.sizeof(at), None, e_REF)
 			assert e.value == 0 and d_x > 0
 			d_obj = cl_mem(d_x)
@@ -647,13 +689,14 @@ def kernel_run(d,n,eff_params):
 	queue = d['queue']
 	err = 0
 	for p_k, (p_h, p_d), p_eff in zip(arg_kinds, params, eff_params):
-		if p_k == 'R':
+		if p_k in 'RX':
 			assert len(p_eff) == p_h._length_
-			for i in range(len(p_eff)):
-				p_h[i] = p_eff[i]
+			#for i in range(len(p_eff)):
+			#	p_h[i] = p_eff[i]
+			p_h[:] = p_eff
 			err |= clEnqueueWriteBuffer(queue, p_d, CL_TRUE, 0, ctypes.sizeof(p_h), p_h, 0, None, None)
 		elif p_k == 'C':
-			p_h.value == p_eff
+			p_h.value = p_eff
 	assert err == 0
 	kernel = d['kernel']
 	globalSize = (size_t * 1)(n)
@@ -662,22 +705,24 @@ def kernel_run(d,n,eff_params):
 	err = clFinish(queue)
 	assert err == 0
 	for p_k, (p_h, p_d), p_eff in zip(arg_kinds, params, eff_params):
-		if p_k == 'W':
+		if p_k in 'WX':
 			assert len(p_eff) == p_h._length_
 			err |= clEnqueueReadBuffer(queue, p_d, CL_TRUE, 0, ctypes.sizeof(p_h), p_h, 0, None, None)
-			for i in range(len(p_eff)):
-				p_eff[i] = p_h[i]
+			#for i in range(len(p_eff)):
+			#	p_eff[i] = p_h[i]
+			p_eff[:] = p_h
 	assert err == 0
 	
 def kernel_terminate(d):
 	""
 	err = 0
-	for h_x, d_x in d['params']:
+	for h_x, d_x in d.get('params',[]):
 		if h_x != d_x:
 			err |= clReleaseMemObject(d_x)
 	assert err == 0
-	err = clReleaseKernel(d['kernel'])
-	assert err == 0
+	if 'kernel' in d:
+		err = clReleaseKernel(d['kernel'])
+		assert err == 0
 	err = clReleaseProgram(d['program'])
 	assert err == 0
 	err = clReleaseCommandQueue(d['queue'])
