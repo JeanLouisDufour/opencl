@@ -101,7 +101,7 @@ void histogram(__global uchar *data,
 			//if (j >= HIST_BINS) j -= HIST_BINS;
 			//j -= j >= HIST_BINS ? HIST_BINS : 0;
 #ifdef LOCALHIST
-#if 0 
+#if 1 
 			localHistogram[j] += privateHistogram[j];
 			barrier(CLK_LOCAL_MEM_FENCE); 
 #else
@@ -140,7 +140,7 @@ if True:
 	data, hist, diag = params = \
 		[image1D, [None]*256, [None]*NWI]
 			
-	for j in range(1000):
+	for j in range(100):
 		kernel_run(d, NWI, params)
 		assert all(di == 3 for di in diag)
 		assert sum(hist) == sz, f"{j} : {sum(hist)} {sz}"

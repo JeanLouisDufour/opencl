@@ -279,7 +279,7 @@ api = [
 ["clCreateCommandQueue",	cl_command_queue, cl_context, cl_device_id, cl_command_queue_properties, _P(cl_int)],
 ["clCreateCommandQueueWithProperties"],
 ["clCreateContext",			cl_context,	_P(cl_context_properties), cl_uint, _P(cl_device_id), CL_CALLBACK_context, ctypes.c_void_p, _P(cl_int)],
-["clCreateContextFromType"],
+["clCreateContextFromType",	cl_context,	_P(cl_context_properties), cl_device_type, CL_CALLBACK_context, ctypes.c_void_p, _P(cl_int)],
 ["clCreateFromGLBuffer"],
 ["clCreateFromGLRenderbuffer"],
 ["clCreateFromGLTexture"],
@@ -478,8 +478,59 @@ buf_sz_REF = _R(buf_sz)
 ndevs = ctypes.c_uint()
 ndevs_REF = _R(ndevs)
 
-CL_BUILD_PROGRAM_FAILURE = -11
-CL_INVALID_PLATFORM = -32
+## Error Codes */
+CL_SUCCESS                                =  0
+CL_DEVICE_NOT_FOUND                       =  -1
+CL_DEVICE_NOT_AVAILABLE                   =  -2
+CL_COMPILER_NOT_AVAILABLE                 =  -3
+CL_MEM_OBJECT_ALLOCATION_FAILURE          =  -4
+CL_OUT_OF_RESOURCES                       =  -5
+CL_OUT_OF_HOST_MEMORY                     =  -6
+CL_PROFILING_INFO_NOT_AVAILABLE           =  -7
+CL_MEM_COPY_OVERLAP                       =  -8
+CL_IMAGE_FORMAT_MISMATCH                  =  -9
+CL_IMAGE_FORMAT_NOT_SUPPORTED             =  -10
+CL_BUILD_PROGRAM_FAILURE 				  =  -11
+CL_MAP_FAILURE                               = -12
+CL_MISALIGNED_SUB_BUFFER_OFFSET              = -13
+CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST = -14
+CL_COMPILE_PROGRAM_FAILURE                   = -15
+CL_LINKER_NOT_AVAILABLE                      = -16
+CL_LINK_PROGRAM_FAILURE                      = -17
+CL_DEVICE_PARTITION_FAILED                   = -18
+CL_KERNEL_ARG_INFO_NOT_AVAILABLE             = -19
+# no man's land
+CL_INVALID_VALUE                             = -30
+CL_INVALID_DEVICE_TYPE                       = -31
+CL_INVALID_PLATFORM 					     = -32
+
+clErrorCodes = [
+"SUCCESS",#                                  0
+"DEVICE_NOT_FOUND",#                         -1
+"DEVICE_NOT_AVAILABLE",#                     -2
+"COMPILER_NOT_AVAILABLE",#                   -3
+"MEM_OBJECT_ALLOCATION_FAILURE",#            -4
+"OUT_OF_RESOURCES",#                         -5
+"OUT_OF_HOST_MEMORY",#                       -6
+"PROFILING_INFO_NOT_AVAILABLE",#             -7
+"MEM_COPY_OVERLAP",#                         -8
+"IMAGE_FORMAT_MISMATCH",#                    -9
+"IMAGE_FORMAT_NOT_SUPPORTED",#               -10
+"BUILD_PROGRAM_FAILURE",#                    -11
+"MAP_FAILURE",#                              -12
+"MISALIGNED_SUB_BUFFER_OFFSET",#             -13
+"EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST",# -14
+"COMPILE_PROGRAM_FAILURE",#                  -15
+"LINKER_NOT_AVAILABLE",#                     -16
+"LINK_PROGRAM_FAILURE",#                     -17
+"DEVICE_PARTITION_FAILED",#                  -18
+"KERNEL_ARG_INFO_NOT_AVAILABLE",#            -19
+	] + [""]*10 + [
+"INVALID_VALUE",#                            -30
+"INVALID_DEVICE_TYPE",#                      -31
+"INVALID_PLATFORM",#                         -32
+	]
+assert clErrorCodes[30] == 'INVALID_VALUE'
 
 def gatherPlatformInfo(p_addr):
 	#
