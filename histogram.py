@@ -37,10 +37,12 @@ assert div >= 16
 
 NWI = 32
 assert sz % NWI == 0 and 256 % NWI == 0
+kmacros = "-DNLIN=720 -DNCOL=1080 "
+kmacros = {'NLIN':image.shape[0], 'NCOL':image.shape[1], 'NWI':NWI}
 ksrc = \
-"""#define NWI {NWI}
+"""// macros : NCOL NLIN NWI
 #define HIST_BINS 256
-#define numDataPerWorkItem (720 * 1080 / NWI)
+#define numDataPerWorkItem (NLIN * NCOL / NWI)
 #define numHistPerWorkItem (HIST_BINS / NWI)
 
 #define LOCALHIST
@@ -124,14 +126,15 @@ void histogram(__global uchar *data,
 }
 """
 # pb entre la fstring et les '//'
-ksrc = ksrc.replace('{NWI}', f'{NWI}')
+#ksrc = ksrc.replace('{NWI}', f'{NWI}')
 
 
 if True:
 	
 	d = kernel_initiate(ksrc,
 					 [ (ctypes.c_uint8 * sz), (ctypes.c_uint32 * 256), (ctypes.c_uint8 * NWI)],
-					 "RWW"
+					 "RWW",
+					 kmacros
 	)
 
 	assert 'error' not in d, d['error']
@@ -140,7 +143,7 @@ if True:
 	data, hist, diag = params = \
 		[image1D, [None]*256, [None]*NWI]
 			
-	for j in range(100):
+	for j in range(10):
 		kernel_run(d, NWI, params)
 		assert all(di == 3 for di in diag)
 		assert sum(hist) == sz, f"{j} : {sum(hist)} {sz}"

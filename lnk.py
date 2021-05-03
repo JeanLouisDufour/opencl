@@ -1,4 +1,4 @@
-import ctypes, sys
+import ctypes, os, sys
 
 """
 /cygdrive/c/ProgramData/Anaconda3/Library/bin/OpenCL.dll
@@ -17,8 +17,10 @@ import ctypes, sys
 """
 
 if sys.platform == 'linux':
-	dll = r'/usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0'
-	# dll = r'/opt/kalray/accesscore/lib/libOpenCL.so.2.5.0' # OSError: ...
+	if os.path.exists(r'/opt/kalray'):
+		dll = r'/opt/kalray/accesscore/lib/libOpenCL.so.2.5.0' # SI OSError: ... , passer de Anaconda a Python basique
+	else:
+		dll = r'/usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0'
 	# dll = r'/usr/lib/x86_64-linux-gnu/hwloc/hwloc_opencl.so' # OSError: /usr/lib/x86_64-linux-gnu/hwloc/hwloc_opencl.so: undefined symbol: hwloc_obj_add_info
 else:
 	dll = r'C:\Users\F074018\Anaconda3\Library\bin\OpenCL.dll'
@@ -91,7 +93,9 @@ def b2_size_t(b):
 	return int.from_bytes(b, 'little')
 def b2_size_t_ARRAY(b):
 	""
-	assert len(b) in (0,), len(b)
+	assert len(b) in (0,1), len(b)
+	if len(b):
+		2+2
 	return b
 def b2_str(b):
 	""
@@ -572,7 +576,7 @@ def gatherPlatformInfo(p_addr):
 
 #mylib = None
 
-def get_kernels(ksrc):
+def get_kernels(ksrc, macros = None):
 	""
 	kl = []
 	#
@@ -602,7 +606,7 @@ def get_kernels(ksrc):
 		ki = ksrc.find('__kernel',i)
 	return kl
 
-def kernel_initiate(ksrc, arg_types, arg_kinds):
+def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None):
 	""" exemple sur vecadd :
 		__kernel void vecAdd(  __global FLOAT *a,  
                        __global FLOAT *b, 
@@ -614,7 +618,7 @@ def kernel_initiate(ksrc, arg_types, arg_kinds):
 	"""
 	# seuls les types a*b ont un attr _length_
 	assert len(arg_types) == len(arg_kinds)
-	kl = get_kernels(ksrc)
+	kl = get_kernels(ksrc, macros)
 	[kname,_,kargs] = kl[0]
 	assert len(kargs) == len(arg_types), (len(kargs) , len(arg_types))
 	#
@@ -641,7 +645,18 @@ def kernel_initiate(ksrc, arg_types, arg_kinds):
 	assert e.value == 0
 	program = clCreateProgramWithSource(context, 1, kernelSource, None, e_REF)
 	assert e.value == 0
-	err = clBuildProgram(program, 0, None, None, NULL_CALLBACK_program, None)
+	if macros is not None:
+		if isinstance(macros, dict):
+			txt = ""
+			for mn,mv in macros.items():
+				if mv in ("",None):
+					txt += "-D"+mn
+				else:
+					txt += "-D"+mn+"="+str(mv)
+				txt += " "
+			macros = txt
+		macros = macros.encode('cp1250')
+	err = clBuildProgram(program, 0, None, macros, NULL_CALLBACK_program, None)
 	if err == CL_BUILD_PROGRAM_FAILURE:
 		"""
 		size_t log_size;
