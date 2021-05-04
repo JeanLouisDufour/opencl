@@ -35,7 +35,7 @@ assert div >= 16
 
 
 
-NWI = 32
+NWI = 16
 assert sz % NWI == 0 and 256 % NWI == 0
 kmacros = "-DNLIN=720 -DNCOL=1080 "
 kmacros = {'NLIN':image.shape[0], 'NCOL':image.shape[1], 'NWI':NWI}
@@ -144,8 +144,10 @@ if True:
 		[image1D, [None]*256, [None]*NWI]
 			
 	for j in range(10):
+		print(j)
 		kernel_run(d, NWI, params)
-		assert all(di == 3 for di in diag)
+		assert all(di == 3 for di in diag), diag
+		print(sum(hist),sz)
 		assert sum(hist) == sz, f"{j} : {sum(hist)} {sz}"
 
 	kernel_terminate(d)

@@ -16,8 +16,10 @@ import ctypes, os, sys
 /cygdrive/c/Windows/WinSxS/amd64_dual_rdvgwddmdx11.inf_31bf3856ad364e35_10.0.17763.134_none_79f739fa0dcd1ce8/opencl.dll
 """
 
+Kalray = False
 if sys.platform == 'linux':
 	if os.path.exists(r'/opt/kalray'):
+		Kalray = True
 		dll = r'/opt/kalray/accesscore/lib/libOpenCL.so.2.5.0' # SI OSError: ... , passer de Anaconda a Python basique
 	else:
 		dll = r'/usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0'
@@ -637,8 +639,12 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None):
 	err = clGetPlatformIDs(1, cpPlatform, None)
 	assert err == 0
 	device_id = (cl_device_id * 1)()
-	err = clGetDeviceIDs(cpPlatform[0], CL_DEVICE_TYPE_GPU, 1, device_id, None)
-	assert err == 0
+	dev_ty = CL_DEVICE_TYPE_GPU
+	err = clGetDeviceIDs(cpPlatform[0], dev_ty, 1, device_id, None)
+	if err == CL_DEVICE_NOT_FOUND:
+		dev_ty = CL_DEVICE_TYPE_ACCELERATOR
+		err = clGetDeviceIDs(cpPlatform[0], dev_ty, 1, device_id, None)
+	assert err == 0, err
 	context = clCreateContext(None, 1, device_id, NULL_CALLBACK_context, None, e_REF)
 	assert e.value == 0
 	queue = clCreateCommandQueue(context, device_id[0], 0, e_REF);
@@ -680,7 +686,7 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None):
 		d = {
 			'src': ksrc, 'arg_types': arg_types, 'arg_kinds': arg_kinds,
 			'name': kname, 'args': kargs,
-			'platform': cpPlatform[0], 'device': device_id[0],
+			'platform': cpPlatform[0], 'device': device_id[0], 'device_type': dev_ty,
 			'context': context, 'queue': queue,
 			'program': program,
 			'error': log.value.decode('cp1250')
@@ -733,7 +739,7 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None):
 	return {
 		'src': ksrc, 'arg_types': arg_types, 'arg_kinds': arg_kinds,
 		'name': kname, 'args': kargs,
-		'platform': cpPlatform[0], 'device': device_id[0],
+		'platform': cpPlatform[0], 'device': device_id[0], 'device_type': dev_ty,
 		'context': context, 'queue': queue,
 		'program': program, 'kernel': kernel,
 		'params' : params,
@@ -883,7 +889,9 @@ __kernel void vecAdd(  __global FLOAT *a,
 	assert err == 0
 	device_id = (cl_device_id * 1)()
 	err = clGetDeviceIDs(cpPlatform[0], CL_DEVICE_TYPE_GPU, 1, device_id, None)
-	assert err == 0
+	if err == CL_DEVICE_NOT_FOUND:
+		err = clGetDeviceIDs(cpPlatform[0], CL_DEVICE_TYPE_ACCELERATOR, 1, device_id, None)
+	assert err == 0, err
 	context = clCreateContext(None, 1, device_id, NULL_CALLBACK_context, None, e_REF)
 	assert e.value == 0
 	queue = clCreateCommandQueue(context, device_id[0], 0, e_REF);
@@ -941,20 +949,30 @@ __kernel void vecAdd(  __global FLOAT *a,
 	delta = [h_c[i]-1 for i in range(n_out)]
 	print(delta)
 	###
-	if True:
-		err = 0
-		for d_x in read_buffers + write_buffers: err |= clReleaseMemObject(d_x)
-	else:
-		err  = clReleaseMemObject(d_a)
+	err = 0
+	if False:
+		for d_x in read_buffers + write_buffers:
+			err |= clReleaseMemObject(d_x)
+	elif not Kalray:
+		err |= clReleaseMemObject(d_a)
 		err |= clReleaseMemObject(d_b)
-		err |= clReleaseMemObject(d_c)
+		err |= clReleaseMemObject(d_c) ### kalray : blocage
+	else:
+		#err |= clReleaseMemObject(d_c)
+		err |= clReleaseMemObject(d_b)
+		err |= clReleaseMemObject(d_a)
 	assert err == 0
 	err = clReleaseKernel(kernel)
 	assert err == 0
-	err = clReleaseProgram(program)
-	assert err == 0
+
+	#err  = clReleaseMemObject(d_c)
+	#assert err == 0
+
+	if not Kalray:
+		err = clReleaseProgram(program)
+		assert err == 0
 	err = clReleaseCommandQueue(queue)
 	assert err == 0
 	err = clReleaseContext(context)
 	assert err == 0
-	
+	print('done')
