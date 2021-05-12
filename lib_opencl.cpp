@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2019 Kalray SA. All rights reserved.
  */
+ /***
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -11,7 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <math.h>
-
+***/
 //#include "common.h"
 #define Fc 800
 #define FILTER_LEN   11  
@@ -20,11 +21,15 @@
 #define Pi 3.14159265359
 #define SCALE 100
 #define Te  0.000125
-
-
-
+/***
 #include <CL/cl.h>
+*******/
 
+#include "lib_opencl.h"
+
+#include <iostream>
+#include <fstream>
+#include <sstream>
 
 /* Inspired from:
  * https://github.com/victusfate/opencl-book-examples/blob/master/src/Chapter_6/HelloBinaryWorld/HelloBinaryWorld.cpp
@@ -124,7 +129,7 @@ cl_command_queue CreateCommandQueue(cl_context context, cl_device_id *device)
 	return commandQueue;
 }
 
-cl_program CreateProgram(cl_context context, cl_device_id device, const char* fileName)
+cl_program CreateProgram(cl_context context, cl_device_id device, const char* fileName, char *dcc_args)
 {
 	cl_int errNum;
 	cl_program program;
@@ -150,7 +155,7 @@ cl_program CreateProgram(cl_context context, cl_device_id device, const char* fi
 		return NULL;
 	}
 
-	errNum = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
+	errNum = clBuildProgram(program, 0, NULL, dcc_args, NULL, NULL);
 	if (errNum != CL_SUCCESS)
 	{
 		// Determine the reason for the error
@@ -313,22 +318,38 @@ bool SaveProgramBinary(cl_program program, cl_device_id device, const char* file
 	return true;
 }
 
-bool CreateMemObjects(cl_context context, cl_mem memObjects[3],
-		int16_t *a, int16_t *b)
+bool CreateMemObjects(struct kdata *kdp)
 {
-	memObjects[0] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-			sizeof(int16_t) * FILTER_LEN, a, NULL);
-	memObjects[1] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-			sizeof(int16_t) * NSAMPLE, b, NULL);
-	memObjects[2] = clCreateBuffer(context, CL_MEM_READ_WRITE,
-			sizeof(int16_t) * NSAMPLE, NULL, NULL);
-
-	if (memObjects[0] == NULL || memObjects[1] == NULL || memObjects[2] == NULL)
-	{
-		std::cerr << "Error creating memory objects." << std::endl;
-		return false;
+	cl_kernel kernel = kdp->kernel;
+	cl_context context = kdp->context;
+	int no = kdp->arg_num;
+	cl_mem *memObjects = kdp->d_objs = (cl_mem *)malloc(sizeof(cl_mem)*no);
+	size_t *sizes = kdp->arg_sizes;
+	cl_mem_flags *flags = kdp->d_obj_flags = (cl_mem_flags *)malloc(sizeof(cl_mem_flags)*no);
+	cl_int err;
+	if (kdp->h_objs == NULL)
+		kdp->h_objs = (void **)calloc(no,sizeof(void *));
+	for (int i = 0; i < no; i++) {
+		// host
+		if (kdp->h_objs[i] == NULL)
+			kdp->h_objs[i] = (void *)malloc(sizes[i]);
+		// device
+		char k = kdp->arg_kinds[i];
+		flags[i] = k=='R' ? CL_MEM_READ_ONLY : k=='W' ? CL_MEM_WRITE_ONLY : CL_MEM_READ_WRITE;
+		memObjects[i] = clCreateBuffer(context, flags[i], sizes[i], NULL, &err);
+		if (err) {
+			std::cout << "FAIL : clCreateBuffer : " << i << " : " << err << std::endl;
+			return false;
+		} else if (memObjects[i] == NULL) {
+			std::cout << "FAIL : clCreateBuffer : " << i << " : " << "STRANGE : NULL pt returned" << std::endl;
+			return false;
+		}
+		err = clSetKernelArg(kernel, i, sizeof(cl_mem), &memObjects[i]);
+		if (err) {
+			std::cout << "FAIL : clSetKernelArg : " << i << " : " << err << std::endl;
+			return false;
+		}
 	}
-
 	return true;
 }
 
@@ -402,12 +423,35 @@ void fircoef( int16_t *coefficient, int filterLength , int fc) {
         }
 }
 
+/*******************************************/
 
-	int
-main(void)
+void kernel_initiate(struct kdata *kd, char *src) {
+	
+}
+
+/*******************************************/
+
+int main(void)
 {
+
 	mppa_cos_configure_count_cycle();
 	printf("Master OpenCL : a %p b %p result %p\n", a, b, result);
+
+	struct kdata kd;
+	kd = {0};
+	kd.src = "histogram.cl";
+	kd.name = "histogram";
+	kd.compile_options = "-g -DNLIN=720 -DNCOL=1080 -DNWI=16";
+	
+	size_t sizes[] = {720*1080, 256,16};
+	// cl_mem_flags flags[] = {CL_MEM_READ_ONLY, CL_MEM_WRITE_ONLY, CL_MEM_WRITE_ONLY};
+	
+	kd.arg_num = 3;
+	kd.arg_kinds = "RWW";
+	kd.arg_sizes = sizes;
+	// kd.d_obj_flags = flags;
+	
+	
 	cl_context context = 0;
 	cl_command_queue commandQueue = 0;
 	cl_program program = 0;
@@ -417,7 +461,7 @@ main(void)
 	cl_int errNum;
 
 	// Create an OpenCL context on first available platform
-	context = CreateContext();
+	kd.context = context = CreateContext();
 	if (context == NULL)
 	{
 		std::cerr << "Failed to create OpenCL context." << std::endl;
@@ -426,12 +470,13 @@ main(void)
 
 	// Create a command-queue on the first device available
 	// on the created context
-	commandQueue = CreateCommandQueue(context, &device);
+	kd.queue = commandQueue = CreateCommandQueue(context, &device);
 	if (commandQueue == NULL)
 	{
 		Cleanup(context, commandQueue, program, kernel, memObjects);
 		return 1;
 	}
+	kd.device = device;
 
 	// Create OpenCL program - first attempt to load cached binary.
 	//  If that is not available, then create the program from source
@@ -444,18 +489,18 @@ main(void)
 	{
 		std::cout << "Binary not loaded, create from source..." << std::endl;
 #ifdef ORIGINAL
-		program = CreateProgram(context, device, "HelloWorld.cl");
+		program = CreateProgram(context, device, kd.src, kd.compile_options);
 #else
-		std::ifstream sourceFile("histogram.cl");
+		std::ifstream sourceFile(kd.src);
 		std::string sourceCode(std::istreambuf_iterator<char>{sourceFile}, {});
 		const char* ksrc = sourceCode.c_str();
-		program = clCreateProgramWithSource( context, 1, &ksrc, 0, &errNum );
+		kd.program = program = clCreateProgramWithSource( context, 1, &ksrc, 0, &errNum );
 		if (errNum) {
 			std::cout << "FAIL : clCreateProgramWithSource : " << errNum << std::endl;
 			Cleanup(context, commandQueue, program, kernel, memObjects);
 			return 1;
 		}
-		errNum = clBuildProgram( program, 0, NULL, "-g -DNLIN=720 -DNCOL=1080 -DNWI=16 ", NULL, NULL);
+		errNum = clBuildProgram( program, 0, NULL, kd.compile_options, NULL, NULL);
 		if (errNum) {
 			std::cout << "FAIL : clBuildProgram : " << errNum << std::endl;
 			size_t log_size;
@@ -470,10 +515,10 @@ main(void)
 			return 1;
 		}
 		std::cout << "OK OK OK" << std::endl;
-		Cleanup(context, commandQueue, program, kernel, memObjects);
-		return 1;
+		//Cleanup(context, commandQueue, program, kernel, memObjects);
+		//return 1;
 #endif
-		if (1 || program == NULL)
+		if (program == NULL)
 		{
 			Cleanup(context, commandQueue, program, kernel, memObjects);
 			return 1;
@@ -494,14 +539,15 @@ main(void)
 	}
 
 	// Create OpenCL kernel
-	kernel = clCreateKernel(program, "hello_kernel", NULL);
-	if (kernel == NULL)
+	kd.kernel = kernel = clCreateKernel(program, kd.name, &errNum);
+	if (kernel == NULL || errNum)
 	{
-		std::cerr << "Failed to create kernel" << std::endl;
+		std::cerr << "FAIL : clCreateKernel : " << errNum << std::endl;
 		Cleanup(context, commandQueue, program, kernel, memObjects);
 		return 1;
 	}
 
+#ifdef ORIGINAL
 	// Create memory objects that will be used as arguments to
 	// kernel.  First create host memory arrays that will be
 	// used to store the arguments to the kernel
@@ -518,9 +564,9 @@ main(void)
 
 
         fircoef( a, FILTER_LEN , Fc);
-
-
-	if (!CreateMemObjects(context, memObjects, a, b))
+#endif
+	
+	if (!CreateMemObjects(&kd))
 	{
 		Cleanup(context, commandQueue, program, kernel, memObjects);
 		return 1;
@@ -528,7 +574,7 @@ main(void)
 
 	size_t globalWorkSize[1] = { 1 }; // use the define
 	size_t localWorkSize[1] = { WG_SIZE }; // same
-
+/***
 	errNum = clSetKernelArg(kernel, 0, sizeof(cl_mem), &memObjects[0]);
 	errNum |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &memObjects[1]);
 	errNum |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &memObjects[2]);
@@ -539,35 +585,29 @@ main(void)
 		Cleanup(context, commandQueue, program, kernel, memObjects);
 		return 1;
 	}
-
+***/
 	struct timeval time_before, time_after;
 
 	gettimeofday (&time_before, NULL);
 
 	// Enqueue a and b
-	errNum = clEnqueueWriteBuffer(commandQueue, memObjects[0], CL_TRUE,
-				0, FILTER_LEN * sizeof(int16_t), a,
-				0, NULL, NULL);
-	if (errNum != CL_SUCCESS)
-	{
-		std::cerr << "Error writing new buffer." << std::endl;
-		Cleanup(context, commandQueue, program, kernel, memObjects);
-		return 1;
-	}
-	errNum = clEnqueueWriteBuffer(commandQueue, memObjects[1], CL_TRUE,
-			0, NSAMPLE * sizeof(int16_t), b,
-			0, NULL, NULL);
-	if (errNum != CL_SUCCESS)
-	{
-		std::cerr << "Error writing new buffer." << std::endl;
-		Cleanup(context, commandQueue, program, kernel, memObjects);
-		return 1;
+	for(int i=0; i < kd.arg_num; i++) {
+		char k = kd.arg_kinds[i];
+		if (k == 'R' || k == 'X') {
+			errNum = clEnqueueWriteBuffer(kd.queue, kd.d_objs[i], CL_TRUE,
+				0, kd.arg_sizes[i], kd.h_objs[i], 0, NULL, NULL);
+			if (errNum) {
+				std::cerr << "FAIL : clEnqueueWriteBuffer " << i << " : " << errNum << std::endl;
+				Cleanup(context, commandQueue, program, kernel, memObjects);
+				return 1;
+			}
+		}
 	}
 
 	// Queue the kernel up for execution across the array
 	uint64_t start = mppa_cos_get_count_cycle();
 
-	errNum = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, globalWorkSize, localWorkSize,
+	errNum = clEnqueueNDRangeKernel(kd.queue, kd.kernel, 1, NULL, globalWorkSize, localWorkSize,
 			0, NULL, NULL);
 	if (errNum != CL_SUCCESS)
 	{
