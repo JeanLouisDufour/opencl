@@ -1,4 +1,4 @@
-import ctypes
+import ctypes, time
 from lnk import *
 
 import numpy as np
@@ -57,15 +57,23 @@ if True:
 	
 	data, hist, diag = params = \
 		[image1D, [None]*256, [None]*NWI]
-			
-	for j in range(10):
-		print(j)
-		kernel_run(d, NWI, params)
-		assert all(di == 3 for di in diag), diag
-		print(sum(hist),sz)
-		assert sum(hist) == sz, f"{j} : {sum(hist)} {sz}"
-
+	[[h1,_],[h2,_],[h3,_]] = d['params']
+	h1[:] = image1D  ### dans la vraie vie, une nouvelle image a chaque cycle
+	
+	nb_iter = 100
+	print('start')
+	tic = time.perf_counter()
+	for j in range(nb_iter):
+		#print(j)
+		kernel_run(d, NWI, params, blocking_writes=False, blocking_reads=False, finish=True)
+		assert all(di == 3 for di in h3), diag
+		assert sum(h2)==sz and h2[0]==h[0]
+		#print(sum(h2),sz, h2[0], h[0])
+		# assert sum(hist) == sz, f"{j} : {sum(hist)} {sz}"
+	toc = time.perf_counter()
+	print('stop', (toc-tic)/nb_iter)
+	
 	kernel_terminate(d)
 
-	print(sum(hist),sz)
+	# print(sum(h2),sz)
 	

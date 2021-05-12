@@ -745,8 +745,9 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None):
 		'params' : params,
 		 }
 	
-
-def kernel_run(d,n,eff_params):
+_kernel_run_gsz = (size_t * 3)(0)
+_kernel_run_lsz = (size_t * 3)(0)
+def kernel_run(d,n,eff_params, blocking_writes=CL_TRUE, blocking_reads=CL_TRUE, finish=True):
 	"""
 	from math import sin, cos
 	n = 21
@@ -755,6 +756,7 @@ def kernel_run(d,n,eff_params):
 	x_c = [None]*n
 	kernel_run(d,21,[x_a,x_b,x_c,n])
 	"""
+	# global _kernel_run_gsz, _kernel_run_lsz
 	params = d['params']
 	assert len(params) == len(eff_params)
 	arg_kinds = d['arg_kinds']
@@ -762,28 +764,27 @@ def kernel_run(d,n,eff_params):
 	err = 0
 	for p_k, (p_h, p_d), p_eff in zip(arg_kinds, params, eff_params):
 		if p_k in 'RX':
-			assert len(p_eff) == p_h._length_
-			#for i in range(len(p_eff)):
-			#	p_h[i] = p_eff[i]
-			p_h[:] = p_eff
-			err |= clEnqueueWriteBuffer(queue, p_d, CL_TRUE, 0, ctypes.sizeof(p_h), p_h, 0, None, None)
+			if False:
+				assert len(p_eff) == p_h._length_
+				p_h[:] = p_eff
+			err |= clEnqueueWriteBuffer(queue, p_d, blocking_writes, 0, ctypes.sizeof(p_h), p_h, 0, None, None)
 		elif p_k == 'C':
 			p_h.value = p_eff
 	assert err == 0
 	kernel = d['kernel']
-	globalSize = (size_t * 1)(n)
-	err = clEnqueueNDRangeKernel(queue, kernel, len(globalSize), None, globalSize, None, 0, None, None)
-	assert err == 0
-	err = clFinish(queue)
+	_kernel_run_gsz[0] = n #globalSize = (size_t * 1)(n)
+	err = clEnqueueNDRangeKernel(queue, kernel, 1, None, _kernel_run_gsz, None, 0, None, None)
 	assert err == 0
 	for p_k, (p_h, p_d), p_eff in zip(arg_kinds, params, eff_params):
 		if p_k in 'WX':
-			assert len(p_eff) == p_h._length_
-			err |= clEnqueueReadBuffer(queue, p_d, CL_TRUE, 0, ctypes.sizeof(p_h), p_h, 0, None, None)
-			#for i in range(len(p_eff)):
-			#	p_eff[i] = p_h[i]
-			p_eff[:] = p_h
+			err |= clEnqueueReadBuffer(queue, p_d, blocking_reads, 0, ctypes.sizeof(p_h), p_h, 0, None, None)
+			if False:
+				assert len(p_eff) == p_h._length_
+				p_eff[:] = p_h
 	assert err == 0
+	if finish:
+		err = clFinish(queue)
+		assert err == 0
 	
 def kernel_terminate(d):
 	""

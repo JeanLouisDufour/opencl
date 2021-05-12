@@ -572,8 +572,8 @@ int main(void)
 		return 1;
 	}
 
-	size_t globalWorkSize[1] = { 1 }; // use the define
-	size_t localWorkSize[1] = { WG_SIZE }; // same
+	size_t globalWorkSize[1] = { 16 }; // use the define
+	//size_t localWorkSize[1] = { WG_SIZE }; // same
 /***
 	errNum = clSetKernelArg(kernel, 0, sizeof(cl_mem), &memObjects[0]);
 	errNum |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &memObjects[1]);
@@ -607,7 +607,7 @@ int main(void)
 	// Queue the kernel up for execution across the array
 	uint64_t start = mppa_cos_get_count_cycle();
 
-	errNum = clEnqueueNDRangeKernel(kd.queue, kd.kernel, 1, NULL, globalWorkSize, localWorkSize,
+	errNum = clEnqueueNDRangeKernel(kd.queue, kd.kernel, 1, NULL, globalWorkSize, NULL /*localWorkSize*/,
 			0, NULL, NULL);
 	if (errNum != CL_SUCCESS)
 	{
@@ -618,10 +618,19 @@ int main(void)
 
 	// Read the output buffer back to the Host
 	uint64_t start_read = mppa_cos_get_count_cycle();
-	errNum = clEnqueueReadBuffer(commandQueue, memObjects[2], CL_TRUE, 0, NSAMPLE * sizeof(int16_t), result,
-			0, NULL, NULL);
-
-	clFinish(commandQueue);
+	for(int i=0; i < kd.arg_num; i++) {
+		char k = kd.arg_kinds[i];
+		if (k == 'W' || k == 'X') {
+			errNum = clEnqueueReadBuffer(kd.queue, kd.d_objs[i], CL_TRUE,
+				0, kd.arg_sizes[i], kd.h_objs[i], 0, NULL, NULL);
+			if (errNum) {
+				std::cerr << "FAIL : clEnqueueReadBuffer " << i << " : " << errNum << std::endl;
+				Cleanup(context, commandQueue, program, kernel, memObjects);
+				return 1;
+			}
+		}
+	}
+	clFinish(kd.queue);
 
 	gettimeofday (&time_after, NULL);
 
