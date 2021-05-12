@@ -587,9 +587,11 @@ int main(void)
 	}
 ***/
 	struct timeval time_before, time_after;
-
+	int nb_iter = 100;
+	std::cout << "Starting " << nb_iter << " iterations" << std::endl;
 	gettimeofday (&time_before, NULL);
-
+for(int kiter=0; kiter < nb_iter; kiter++) {
+	
 	// Enqueue a and b
 	for(int i=0; i < kd.arg_num; i++) {
 		char k = kd.arg_kinds[i];
@@ -631,10 +633,10 @@ int main(void)
 		}
 	}
 	clFinish(kd.queue);
-
+} // for kiter
 	gettimeofday (&time_after, NULL);
-
-        printf("[Coolidge] Total Processing time in us: %ld us\n",((time_after.tv_sec - time_before.tv_sec) * 1000000 + time_after.tv_usec) - time_before.tv_usec);
+	int dt_usec = (time_after.tv_sec - time_before.tv_sec) * 1000000 + time_after.tv_usec - time_before.tv_usec;
+        printf("Mean Processing time : %lf s\n",(double)dt_usec / (nb_iter * 1000000.0));
 
 
 	uint64_t end_read = mppa_cos_get_count_cycle();
