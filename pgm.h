@@ -17,10 +17,17 @@ void  parsePGM(const char * path,
                   uint32_t * width,
                   uint32_t  * height,
                   uint8_t * bpp);
+				  
 void  loadPGM(const char * path,
               void * pt,
               uint32_t width,
               uint32_t height,
               uint32_t pitch,
               uint8_t bpp);
+
+void  readPGM(const char * path,
+	void **pt,
+    uint32_t * width,
+    uint32_t  * height,
+    uint8_t * bpp);
 #endif // __PGM__C__

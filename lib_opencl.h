@@ -29,3 +29,5 @@ struct kdata {
 };
 
 int kernel_initiate(struct kdata *kdp);
+int kernel_run(struct kdata *kdp);
+int kernel_terminate(struct kdata *kdp);

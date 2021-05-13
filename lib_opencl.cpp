@@ -188,8 +188,9 @@ cl_program CreateProgramFromBinary(cl_context context, cl_device_id device, cons
 	rewind(fp);
 
 	unsigned char *programBinary = new unsigned char[binarySize];
-	fread(programBinary, 1, binarySize, fp);
+	size_t _r = fread(programBinary, 1, binarySize, fp);
 	fclose(fp);
+	assert(_r == binarySize);
 
 	cl_int errNum = 0;
 	cl_program program;
@@ -356,9 +357,10 @@ bool CreateMemObjects(struct kdata *kdp)
 ///
 //Cleanup any created OpenCL resources
 //
-void Cleanup(cl_context context, cl_command_queue commandQueue,
-		cl_program program, cl_kernel kernel, cl_mem memObjects[3])
+void Cleanup(struct kdata *kdp, cl_context context, cl_command_queue commandQueue,
+		cl_program program, cl_kernel kernel, cl_mem *memObjects)
 {
+	if(memObjects)
 	for (int i = 0; i < 3; i++)
 	{
 		if (memObjects[i] != 0)
@@ -425,6 +427,7 @@ void fircoef( int16_t *coefficient, int filterLength , int fc) {
 
 /*******************************************/
 
+#define kd (*kdp)	
 int kernel_initiate(struct kdata *kdp) {
 	
 
@@ -438,14 +441,14 @@ int kernel_initiate(struct kdata *kdp) {
 	printf("Master OpenCL : a %p b %p result %p\n", a, b, result);
 
 	//struct kdata kd;
-#define kd (*kdp)	
 	
 	cl_context context = 0;
 	cl_command_queue commandQueue = 0;
 	cl_program program = 0;
 	cl_device_id device = 0;
 	cl_kernel kernel = 0;
-	cl_mem memObjects[3] = { 0, 0, 0 };
+	//cl_mem memObjects[3] = { 0, 0, 0 };
+	cl_mem *memObjects = NULL;
 	cl_int errNum;
 
 	// Create an OpenCL context on first available platform
@@ -461,7 +464,7 @@ int kernel_initiate(struct kdata *kdp) {
 	kd.queue = commandQueue = CreateCommandQueue(context, &device);
 	if (commandQueue == NULL)
 	{
-		Cleanup(context, commandQueue, program, kernel, memObjects);
+		Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 		return 1;
 	}
 	kd.device = device;
@@ -477,7 +480,7 @@ int kernel_initiate(struct kdata *kdp) {
 	{
 		std::cout << "Binary not loaded, create from source..." << std::endl;
 #ifdef ORIGINAL
-		program = CreateProgram(context, device, kd.src, kd.compile_options);
+		kd.program = program = CreateProgram(context, device, kd.src, kd.compile_options);
 #else
 		std::ifstream sourceFile(kd.src);
 		std::string sourceCode(std::istreambuf_iterator<char>{sourceFile}, {});
@@ -485,7 +488,7 @@ int kernel_initiate(struct kdata *kdp) {
 		kd.program = program = clCreateProgramWithSource( context, 1, &ksrc, 0, &errNum );
 		if (errNum) {
 			std::cout << "FAIL : clCreateProgramWithSource : " << errNum << std::endl;
-			Cleanup(context, commandQueue, program, kernel, memObjects);
+			Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 			return 1;
 		}
 		errNum = clBuildProgram( program, 0, NULL, kd.compile_options, NULL, NULL);
@@ -499,7 +502,7 @@ int kernel_initiate(struct kdata *kdp) {
 			std::cout << errNum << std::endl;
 			std::cout << log << std::endl; 
 			
-			Cleanup(context, commandQueue, program, kernel, memObjects);
+			Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 			return 1;
 		}
 		std::cout << "OK OK OK" << std::endl;
@@ -508,7 +511,7 @@ int kernel_initiate(struct kdata *kdp) {
 #endif
 		if (program == NULL)
 		{
-			Cleanup(context, commandQueue, program, kernel, memObjects);
+			Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 			return 1;
 		}
 #ifdef ORIGINAL
@@ -516,7 +519,7 @@ int kernel_initiate(struct kdata *kdp) {
 		if (SaveProgramBinary(program, device, "HelloWorld.cl.bin") == false)
 		{
 			std::cerr << "Failed to write program binary" << std::endl;
-			Cleanup(context, commandQueue, program, kernel, memObjects);
+			Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 			return 1;
 		}
 #endif
@@ -531,7 +534,7 @@ int kernel_initiate(struct kdata *kdp) {
 	if (kernel == NULL || errNum)
 	{
 		std::cerr << "FAIL : clCreateKernel : " << errNum << std::endl;
-		Cleanup(context, commandQueue, program, kernel, memObjects);
+		Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 		return 1;
 	}
 
@@ -556,9 +559,23 @@ int kernel_initiate(struct kdata *kdp) {
 	
 	if (!CreateMemObjects(&kd))
 	{
-		Cleanup(context, commandQueue, program, kernel, memObjects);
+		Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 		return 1;
 	}
+	
+	return errNum;
+}
+
+int kernel_run(struct kdata *kdp) {
+
+	cl_context context = kd.context;
+	cl_command_queue commandQueue = kd.queue;
+	cl_program program = kd.program;
+	cl_device_id device = kd.device;
+	cl_kernel kernel = kd.kernel;
+	//cl_mem memObjects[3] = { 0, 0, 0 };
+	cl_mem *memObjects = kd.d_objs;
+	cl_int errNum;
 
 	size_t globalWorkSize[1] = { 16 }; // use the define
 	//size_t localWorkSize[1] = { WG_SIZE }; // same
@@ -574,11 +591,8 @@ int kernel_initiate(struct kdata *kdp) {
 		return 1;
 	}
 ***/
-	struct timeval time_before, time_after;
-	int nb_iter = 100;
-	std::cout << "Starting " << nb_iter << " iterations" << std::endl;
-	gettimeofday (&time_before, NULL);
-for(int kiter=0; kiter < nb_iter; kiter++) {
+	
+
 	
 	// Enqueue a and b
 	for(int i=0; i < kd.arg_num; i++) {
@@ -588,7 +602,7 @@ for(int kiter=0; kiter < nb_iter; kiter++) {
 				0, kd.arg_sizes[i], kd.h_objs[i], 0, NULL, NULL);
 			if (errNum) {
 				std::cerr << "FAIL : clEnqueueWriteBuffer " << i << " : " << errNum << std::endl;
-				Cleanup(context, commandQueue, program, kernel, memObjects);
+				Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 				return 1;
 			}
 		}
@@ -602,7 +616,7 @@ for(int kiter=0; kiter < nb_iter; kiter++) {
 	if (errNum != CL_SUCCESS)
 	{
 		std::cerr << "Error queuing kernel for execution. Error code is " << errNum << "." << std::endl;
-		Cleanup(context, commandQueue, program, kernel, memObjects);
+		Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 		return 1;
 	}
 
@@ -615,23 +629,20 @@ for(int kiter=0; kiter < nb_iter; kiter++) {
 				0, kd.arg_sizes[i], kd.h_objs[i], 0, NULL, NULL);
 			if (errNum) {
 				std::cerr << "FAIL : clEnqueueReadBuffer " << i << " : " << errNum << std::endl;
-				Cleanup(context, commandQueue, program, kernel, memObjects);
+				Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 				return 1;
 			}
 		}
 	}
 	clFinish(kd.queue);
-} // for kiter
-	gettimeofday (&time_after, NULL);
-	int dt_usec = (time_after.tv_sec - time_before.tv_sec) * 1000000 + time_after.tv_usec - time_before.tv_usec;
-        printf("Mean Processing time : %lf s\n",(double)dt_usec / (nb_iter * 1000000.0));
+
 
 
 	uint64_t end_read = mppa_cos_get_count_cycle();
 	if (errNum != CL_SUCCESS)
 	{
 		std::cerr << "Error reading result buffer." << std::endl;
-		Cleanup(context, commandQueue, program, kernel, memObjects);
+		Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 		return 1;
 	}
 
@@ -642,10 +653,14 @@ for(int kiter=0; kiter < nb_iter; kiter++) {
         }
 
 
-	std::cout << "Executed program succesfully." << std::endl;
+	//std::cout << "Executed program succesfully." << std::endl;
 
-	Cleanup(context, commandQueue, program, kernel, memObjects);
+	//Cleanup(kdp, context, commandQueue, program, kernel, memObjects);
 
-	std::cout << "Goodbye." << std::endl;
+	//std::cout << "Goodbye." << std::endl;
 	return 0;
+}
+
+int kernel_terminate(struct kdata *kdp) {
+	Cleanup(kdp, kdp->context, kdp->queue, kdp->program, kdp->kernel, kdp->d_objs);
 }

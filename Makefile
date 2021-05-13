@@ -11,7 +11,7 @@ arch := $(ARCH)
 
 cppflags = -g3 -O2
 
-host_app-srcs := lib_opencl.cpp pgm.c histogram.cpp
+host_app-srcs := histogram.cpp lib_opencl.cpp pgm.cpp
 host_app-cflags := -g3 -O2
 host_app-cppflags := -g3 -O2 -fopenmp
 host_app-lflags := -fopenmp
