@@ -28,4 +28,4 @@ struct kdata {
 	cl_mem_flags *d_obj_flags;
 };
 
-void kernel_initiate(struct kdata *kd, char *src);
+int kernel_initiate(struct kdata *kdp);

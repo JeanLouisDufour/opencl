@@ -425,32 +425,20 @@ void fircoef( int16_t *coefficient, int filterLength , int fc) {
 
 /*******************************************/
 
-void kernel_initiate(struct kdata *kd, char *src) {
+int kernel_initiate(struct kdata *kdp) {
 	
-}
+
 
 /*******************************************/
 
-int main(void)
-{
+//int xmain(void)
+//{
 
 	mppa_cos_configure_count_cycle();
 	printf("Master OpenCL : a %p b %p result %p\n", a, b, result);
 
-	struct kdata kd;
-	kd = {0};
-	kd.src = "histogram.cl";
-	kd.name = "histogram";
-	kd.compile_options = "-g -DNLIN=720 -DNCOL=1080 -DNWI=16";
-	
-	size_t sizes[] = {720*1080, 256,16};
-	// cl_mem_flags flags[] = {CL_MEM_READ_ONLY, CL_MEM_WRITE_ONLY, CL_MEM_WRITE_ONLY};
-	
-	kd.arg_num = 3;
-	kd.arg_kinds = "RWW";
-	kd.arg_sizes = sizes;
-	// kd.d_obj_flags = flags;
-	
+	//struct kdata kd;
+#define kd (*kdp)	
 	
 	cl_context context = 0;
 	cl_command_queue commandQueue = 0;
