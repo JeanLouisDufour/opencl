@@ -18,10 +18,10 @@ void histogram(__global uchar *data,
    /*__private*/ int privateHistogram[HIST_BINS];
    int lid = get_local_id(0), lsz = get_local_size(0);
    int gid = get_global_id(0), gsz = get_global_size(0);
-   
-   uchar ok = 0;
-   if (lid==gid) ok |= 1;
    int ng = get_num_groups(0), gr_id = get_group_id(0);
+   uchar ok = 0;
+   if (gid==lid+gr_id*lsz) ok |= 1;
+   // on ne veut qu'un seul groupe
    if (ng==1 && gr_id==0) ok |= 2;
    diag[gid] = ok;
    

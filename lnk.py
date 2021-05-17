@@ -1,4 +1,5 @@
-import ctypes, os, sys
+import ctypes, re, os, sys
+_PyCArrayType = type(ctypes.c_float*36) # dans _ctypes, mais inaccessible autrement
 
 """
 /cygdrive/c/ProgramData/Anaconda3/Library/bin/OpenCL.dll
@@ -608,7 +609,20 @@ def get_kernels(ksrc, macros = None):
 		ki = ksrc.find('__kernel',i)
 	return kl
 
-def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None):
+# faciliter l'ecriture de arg_types
+int8_t = ctypes.c_int8
+int16_t = ctypes.c_int16
+int32_t = ctypes.c_int32
+int64_t = ctypes.c_int64
+uint8_t = ctypes.c_uint8
+uint16_t = ctypes.c_uint16
+uint32_t = ctypes.c_uint32
+uint64_t = ctypes.c_uint64
+float_t = ctypes.c_float
+double_t = ctypes.c_double
+
+
+def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None):
 	""" exemple sur vecadd :
 		__kernel void vecAdd(  __global FLOAT *a,  
                        __global FLOAT *b, 
@@ -619,7 +633,17 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None):
 	d = kernel_initiate(ksrc, [(ctypes.c_float * n), (ctypes.c_float * n), (ctypes.c_float * n), cl_uint],"RRWC")
 	"""
 	# seuls les types a*b ont un attr _length_
+	assert isinstance(ksrc, str)
+	if ksrc.endswith("cl"):
+		kfile = ksrc
+		kfd = open(kfile)
+		ksrc = kfd.read()
+		kfd.close()
+	else:
+		kfile = None
 	assert len(arg_types) == len(arg_kinds)
+	assert all(isinstance(x, (_PyCArrayType, int,float)) for x in arg_types)
+	assert all(c in "DFILRWX" for c in arg_kinds)
 	kl = get_kernels(ksrc, macros)
 	[kname,_,kargs] = kl[0]
 	assert len(kargs) == len(arg_types), (len(kargs) , len(arg_types))
@@ -639,11 +663,19 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None):
 	err = clGetPlatformIDs(1, cpPlatform, None)
 	assert err == 0
 	device_id = (cl_device_id * 1)()
-	dev_ty = CL_DEVICE_TYPE_GPU
-	err = clGetDeviceIDs(cpPlatform[0], dev_ty, 1, device_id, None)
-	if err == CL_DEVICE_NOT_FOUND:
-		dev_ty = CL_DEVICE_TYPE_ACCELERATOR
+	if dev_kind is None:
+		dev_ty = CL_DEVICE_TYPE_GPU
 		err = clGetDeviceIDs(cpPlatform[0], dev_ty, 1, device_id, None)
+		if err == CL_DEVICE_NOT_FOUND:
+			dev_ty = CL_DEVICE_TYPE_ACCELERATOR
+			err = clGetDeviceIDs(cpPlatform[0], dev_ty, 1, device_id, None)
+	elif dev_kind in ("CPU","GPU") or dev_kind.startswith("ACC"):
+		dev_ty = CL_DEVICE_TYPE_CPU if dev_kind=="CPU" else \
+				 CL_DEVICE_TYPE_GPU if dev_kind=="GPU" else \
+				 CL_DEVICE_TYPE_ACCELERATOR
+		err = clGetDeviceIDs(cpPlatform[0], dev_ty, 1, device_id, None)
+	else:
+		assert False, "bad dev_kind"
 	assert err == 0, err
 	context = clCreateContext(None, 1, device_id, NULL_CALLBACK_context, None, e_REF)
 	assert e.value == 0
@@ -747,7 +779,7 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None):
 	
 _kernel_run_gsz = (size_t * 3)(0)
 _kernel_run_lsz = (size_t * 3)(0)
-def kernel_run(d,n,eff_params, blocking_writes=CL_TRUE, blocking_reads=CL_TRUE, finish=True):
+def kernel_run(d,n,eff_params, blocking_writes=CL_TRUE, blocking_reads=CL_TRUE, finish=True, local_work_size=None):
 	"""
 	from math import sin, cos
 	n = 21
@@ -773,8 +805,16 @@ def kernel_run(d,n,eff_params, blocking_writes=CL_TRUE, blocking_reads=CL_TRUE, 
 	assert err == 0
 	kernel = d['kernel']
 	_kernel_run_gsz[0] = n #globalSize = (size_t * 1)(n)
-	err = clEnqueueNDRangeKernel(queue, kernel, 1, None, _kernel_run_gsz, None, 0, None, None)
+	if local_work_size:
+		_kernel_run_lsz[0] = local_work_size
+		lws = _kernel_run_lsz
+	else:
+		lws = None
+	err = clEnqueueNDRangeKernel(queue, kernel, 1, None, _kernel_run_gsz, lws, 0, None, None)
 	assert err == 0
+	#if d['device_type'] == CL_DEVICE_TYPE_CPU:
+	#	err = clFinish(queue)
+	#	assert err == 0
 	for p_k, (p_h, p_d), p_eff in zip(arg_kinds, params, eff_params):
 		if p_k in 'WX':
 			err |= clEnqueueReadBuffer(queue, p_d, blocking_reads, 0, ctypes.sizeof(p_h), p_h, 0, None, None)

@@ -33,9 +33,9 @@ assert sz == div*q
 assert div >= 16
 
 kfile = "histogram.cl"
-kfd = open(kfile)
-ksrc = kfd.read()
-kfd.close()
+#kfd = open(kfile)
+#ksrc = kfd.read()
+#kfd.close()
 
 # 1iere ligne : // macros : NCOL NLIN NWI
 
@@ -46,10 +46,11 @@ kmacros = {'NLIN':image.shape[0], 'NCOL':image.shape[1], 'NWI':NWI}
 
 if True:
 	
-	d = kernel_initiate(ksrc,
-					 [ (ctypes.c_uint8 * sz), (ctypes.c_uint32 * 256), (ctypes.c_uint8 * NWI)],
+	d = kernel_initiate(kfile,
+					 [ uint8_t * sz, uint32_t * 256, uint8_t * NWI],
 					 "RWW",
 					 kmacros
+					 #,dev_kind="CPU"
 	)
 
 	assert 'error' not in d, d['error']
@@ -61,12 +62,12 @@ if True:
 	h1[:] = image1D  ### dans la vraie vie, une nouvelle image a chaque cycle
 	
 	nb_iter = 100
-	print('start')
+	print('start',nb_iter)
 	tic = time.perf_counter()
 	for j in range(nb_iter):
 		#print(j)
-		kernel_run(d, NWI, params, blocking_writes=False, blocking_reads=False, finish=True)
-		assert all(di == 3 for di in h3), diag
+		kernel_run(d, NWI, params, blocking_writes=False, blocking_reads=False, finish=True, local_work_size=NWI)
+		assert all(di == 3 for di in h3), list(h3)
 		assert sum(h2)==sz and h2[0]==h[0]
 		#print(sum(h2),sz, h2[0], h[0])
 		# assert sum(hist) == sz, f"{j} : {sum(hist)} {sz}"
