@@ -1,9 +1,3 @@
-"""
-BARRIER :
-Kalray = 0,0023
-Intel = 0,0013
-GPU Intel = 0,016
-"""
 import ctypes, time
 from lnk import *
 
@@ -38,7 +32,10 @@ for div in range(64,1,-1):
 assert sz == div*q
 assert div >= 16
 
-
+kfile = "histogram.cl"
+#kfd = open(kfile)
+#ksrc = kfd.read()
+#kfd.close()
 
 # 1iere ligne : // macros : NCOL NLIN NWI
 
@@ -49,21 +46,20 @@ kmacros = {'NLIN':image.shape[0], 'NCOL':image.shape[1], 'NWI':NWI}
 
 if True:
 	
-	d = kernel_initiate("histogram.cl",
+	d = kernel_initiate(kfile,
 					 [ uint8_t * sz, uint32_t * 256, uint8_t * NWI],
 					 "RWW",
-					 f"-DNLIN={image.shape[0]} -DNCOL={image.shape[1]} -DNWI={NWI}"
+					 kmacros
 					 #,dev_kind="CPU"
 	)
 
 	assert 'error' not in d, d['error']
 
 	
-	#data, hist, diag = \
-	params = \
+	data, hist, diag = params = \
 		[image1D, [None]*256, [None]*NWI]
 	[[h1,_],[h2,_],[h3,_]] = d['params']
-	h1[:] = image.reshape((sz,))  ### dans la vraie vie, une nouvelle image a chaque cycle
+	h1[:] = image1D  ### dans la vraie vie, une nouvelle image a chaque cycle
 	
 	nb_iter = 100
 	print('start',nb_iter)
@@ -72,7 +68,7 @@ if True:
 		#print(j)
 		kernel_run(d, NWI, params, blocking_writes=False, blocking_reads=False, finish=True, local_work_size=NWI)
 		assert all(di == 3 for di in h3), list(h3)
-		assert sum(h2)==sz and all(h2==h) # h2[0]==h[0]
+		assert sum(h2)==sz and h2[0]==h[0]
 		#print(sum(h2),sz, h2[0], h[0])
 		# assert sum(hist) == sz, f"{j} : {sum(hist)} {sz}"
 	toc = time.perf_counter()
