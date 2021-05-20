@@ -16,6 +16,7 @@ import cv2 as cv
 
 source = 0
 #source = r'E:\webgl-examples-gh-pages\tutorial\sample8\Firefox.mp4'
+source = r'/home/accesscore/Downloads/Sample Video File For Testing.mp4'
 
 # BEGIN prechauffage
 cap = cv.VideoCapture(source)
