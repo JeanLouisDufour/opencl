@@ -16,7 +16,9 @@ import cv2 as cv
 
 source = 0
 #source = r'E:\webgl-examples-gh-pages\tutorial\sample8\Firefox.mp4'
-source = r'/home/accesscore/Downloads/Sample Video File For Testing.mp4'
+#source = r'/home/accesscore/Downloads/Sample Video File For Testing.mp4'
+#source = r'C:\Users\F074018\Downloads\Sample Video File For Testing.mp4'
+source = r'C:\Users\F074018\Downloads\sample-mp4-file.mp4'
 
 # BEGIN prechauffage
 cap = cv.VideoCapture(source)
@@ -25,12 +27,13 @@ ok, image_color = cap.read()
 assert ok
 id_color = id(image_color)
 print(image_color.shape, image_color.dtype) # (480, 640, 3) uint8
-image_gray = cv.cvtColor(image_color, cv.COLOR_BGR2GRAY)
+#image_gray = cv.cvtColor(image_color, cv.COLOR_BGR2GRAY)
+image_gray = np.empty(image_color.shape[:2], dtype=np.uint8)
 print(image_gray.shape, image_gray.dtype) # 
 image_gray_sz = prod(image_gray.shape)
 id_gray = id(image_gray)
 cv.namedWindow('image')
-image_fps = np.empty((76,160), dtype=np.uint8) # 160 mini pour pouvoir la dragger
+image_fps = np.empty((76,192), dtype=np.uint8) # 160 mini pour pouvoir la dragger
 cv.namedWindow('fps')
 image_cah = image_gray.copy()
 cv.namedWindow('image_cah')
@@ -39,6 +42,7 @@ cv.namedWindow('image_equ')
 hist_gray = np.empty((256,1), dtype=np.float32) # uint32 non supporte par calcHist
 hist_gray_cumsum = np.empty((256,), dtype=np.float32) 
 hist_int32 = np.empty((256,), dtype=np.int32)
+hist_int32_cumsum = np.empty((256,), dtype=np.int32)
 lut = np.empty((256,), dtype=np.int32)
 cv.namedWindow('histogram')
 hist_img = np.empty((256,256), dtype=np.uint8)
@@ -54,9 +58,13 @@ txt_color = 0 # (0,0,0) # (100, 255, 0)
 txt_thick = 3
 
 fps = 0; fps_str = "00"
+q_pressed = False
 tic = ceil(time.perf_counter())
 while ok:
 	fps += 1
+	assert id_color == id(image_color)
+	image_gray = cv.cvtColor(image_color, cv.COLOR_BGR2GRAY, image_gray)
+	assert id_gray == id(image_gray)
 	if True:
 		cv.calcHist([image_gray], [0], None, [256], [0,256], hist_gray)
 		hist_img[:] = 0  # ou .fill(0)
@@ -78,11 +86,15 @@ while ok:
 	if n == image_gray_sz: # Dirac
 		lut[i] = i # les autres : rien a faire
 	else:
-		lut[i] = 0
 		scale = np.divide(255.0, image_gray_sz - n, dtype=np.float32)
-		lut[i+1:] = np.round(np.multiply(np.cumsum(hist_int32[i+1:]), scale, dtype=np.float32), decimals=0)
+		if False: # opencv
+			lut[i] = 0
+			lut[i+1:] = np.round(np.multiply(np.cumsum(hist_int32[i+1:]), scale, dtype=np.float32), decimals=0)
+		else: # opencl
+			hist_int32[i] = 0
+			np.cumsum(hist_int32, out=hist_int32_cumsum)
+			lut[:] = np.round(np.multiply(hist_int32_cumsum, scale, dtype=np.float32), decimals=0)
 		assert all(0 <= lut[i:]) and all(lut[i:] <= 255)
-	#np.cumsum(hist_gray, out=hist_gray_cumsum)
 	image_cah[:] = lut[image_gray]
 	cv.imshow('image_cah',image_cah)
 	# image equ
@@ -94,10 +106,11 @@ while ok:
 	#
 	cv.imshow('image',image_gray)
 	ok, image_color = cap.read(image_color)
-	assert id_color == id(image_color)
-	image_gray = cv.cvtColor(image_color, cv.COLOR_BGR2GRAY, image_gray)
-	assert id_gray == id(image_gray)
-	ok &= cv.waitKey(1) & 0xFF != ord('q') ## vivement pollKey
+	q_pressed = cv.waitKey(1) & 0xFF == ord('q') ## vivement pollKey
+	ok &= not q_pressed
+if not q_pressed:
+	print("no more images (press any key)")
+	cv.waitKey(0)
 
 file = 'cat.bmp'
 file = 'cat.pgm' # g = grey, p =color, b = binary
