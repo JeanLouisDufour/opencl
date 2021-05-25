@@ -622,7 +622,7 @@ float_t = ctypes.c_float
 double_t = ctypes.c_double
 
 
-def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None):
+def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, params=None):
 	""" exemple sur vecadd :
 		__kernel void vecAdd(  __global FLOAT *a,  
                        __global FLOAT *b, 
@@ -644,6 +644,10 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None):
 	assert len(arg_types) == len(arg_kinds)
 	assert all(isinstance(x, (_PyCArrayType, int,float)) for x in arg_types)
 	assert all(c in "DFILRWX" for c in arg_kinds)
+	if params is None:
+		params = [None]*len(arg_types)
+	if len(params) < len(arg_types):
+		params += [None]*(len(arg_types)-len(params))
 	kl = get_kernels(ksrc, macros)
 	[kname,_,kargs] = kl[0]
 	assert len(kargs) == len(arg_types), (len(kargs) , len(arg_types))
@@ -751,7 +755,7 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None):
 	err = 0
 	params = []
 	#read_arrays, write_arrays, read_buffers, write_buffers = [],[],[],[]
-	for ai, (at,ak) in enumerate(zip(arg_types,arg_kinds)):
+	for ai, (at,ak,par) in enumerate(zip(arg_types,arg_kinds,params)):
 		if hasattr(at, '_length_'): # array
 			assert ak in 'RWX'
 			d_k = CL_MEM_READ_ONLY  if ak == 'R' else \
@@ -761,7 +765,10 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None):
 			d_x = clCreateBuffer(context, d_k, ctypes.sizeof(at), None, e_REF)
 			assert e.value == 0 and d_x > 0
 			d_obj = cl_mem(d_x)
-			h_obj = at() # liaison plus tard par clEnqueueWriteBuffer ou ...Read...
+			if par is None:
+				h_obj = at() # liaison plus tard par clEnqueueWriteBuffer ou ...Read...
+			else:
+				_= 2+2
 		else:
 			assert ak == 'C'
 			h_obj = d_obj = at()

@@ -13,12 +13,14 @@ import matplotlib.pyplot as plt
 import imageio
 from math import prod, ceil
 import cv2 as cv
+from histogram_ctrl_ref import hist_ctrl
+from histogram_ctrl import k_hist_init, k_hist_run
 
 source = 0
 #source = r'E:\webgl-examples-gh-pages\tutorial\sample8\Firefox.mp4'
 #source = r'/home/accesscore/Downloads/Sample Video File For Testing.mp4'
 #source = r'C:\Users\F074018\Downloads\Sample Video File For Testing.mp4'
-source = r'C:\Users\F074018\Downloads\sample-mp4-file.mp4'
+#source = r'C:\Users\F074018\Downloads\sample-mp4-file.mp4'
 
 # BEGIN prechauffage
 cap = cv.VideoCapture(source)
@@ -33,12 +35,17 @@ print(image_gray.shape, image_gray.dtype) #
 image_gray_sz = prod(image_gray.shape)
 id_gray = id(image_gray)
 cv.namedWindow('image')
+
+print('compiling kernel')
+d = k_hist_init(image_gray.shape)
+print('done')
+
 image_fps = np.empty((76,192), dtype=np.uint8) # 160 mini pour pouvoir la dragger
 cv.namedWindow('fps')
 image_cah = image_gray.copy()
 cv.namedWindow('image_cah')
-image_equ = image_gray.copy()
-cv.namedWindow('image_equ')
+#image_equ = image_gray.copy()
+#cv.namedWindow('image_equ')
 hist_gray = np.empty((256,1), dtype=np.float32) # uint32 non supporte par calcHist
 hist_gray_cumsum = np.empty((256,), dtype=np.float32) 
 hist_int32 = np.empty((256,), dtype=np.int32)
@@ -46,10 +53,21 @@ hist_int32_cumsum = np.empty((256,), dtype=np.int32)
 lut = np.empty((256,), dtype=np.int32)
 cv.namedWindow('histogram')
 hist_img = np.empty((256,256), dtype=np.uint8)
+cv.namedWindow('histogram_cah')
+hist_img_cah = np.empty((256,256), dtype=np.uint8)
 # https://docs.opencv.org/master/dc/da5/tutorial_py_drawing_functions.html
 hist_pts = np.empty((256,1,2), dtype = np.int32)
 hist_pts[:,0,0] = range(256)
 # END prechauffage
+
+def draw_hist(image_gray, hist_gray, hist_img):
+	"hist_gray est en float a cause de calcHist"
+	cv.calcHist([image_gray], [0], None, [256], [0,256], hist_gray)
+	hist_img[:] = 0  # ou .fill(0)
+	#hist_int32[:] = hist_gray[:,0] # conversion float32 -> int32
+	#assert sum(hist_int32) == np.prod(image_gray.shape)
+	hist_pts[:,0,1] = 256 - (np.uint32(hist_gray[:,0]) >> 5) # 8192 / 256 = 32
+	cv.polylines(hist_img, [hist_pts], False, 255)
 
 txt_orig = (20, 70)
 txt_font = cv.FONT_HERSHEY_SIMPLEX
@@ -66,12 +84,15 @@ while ok:
 	image_gray = cv.cvtColor(image_color, cv.COLOR_BGR2GRAY, image_gray)
 	assert id_gray == id(image_gray)
 	if True:
+		"""
 		cv.calcHist([image_gray], [0], None, [256], [0,256], hist_gray)
 		hist_img[:] = 0  # ou .fill(0)
 		hist_int32[:] = hist_gray[:,0] # conversion float32 -> int32
 		assert sum(hist_int32) == image_gray_sz
 		hist_pts[:,0,1] = 256 - (hist_int32 >> 5) # 8192 / 256 = 32
 		cv.polylines(hist_img, [hist_pts], False, 255)
+		"""
+		draw_hist(image_gray, hist_gray, hist_img)
 		cv.imshow('histogram', hist_img)
 	if time.perf_counter() > tic:
 		tic += 1
@@ -80,6 +101,7 @@ while ok:
 		cv.imshow('fps',image_fps)
 		fps = 0
 	# image cah
+	"""
 	for i,n in enumerate(hist_int32):
 		if n:
 			break
@@ -96,15 +118,27 @@ while ok:
 			lut[:] = np.round(np.multiply(hist_int32_cumsum, scale, dtype=np.float32), decimals=0)
 		assert all(0 <= lut[i:]) and all(lut[i:] <= 255)
 	image_cah[:] = lut[image_gray]
+	"""
+	if False:
+		cv.equalizeHist(image_gray, image_cah)
+	elif False:
+		hist_ctrl(image_gray, hist_int32, lut, image_cah)
+	else:
+		k_hist_run(d, image_gray, image_cah)
 	cv.imshow('image_cah',image_cah)
+	draw_hist(image_cah, hist_gray, hist_img_cah)
+	cv.imshow('histogram_cah', hist_img_cah)
 	# image equ
+	"""
 	cv.equalizeHist(image_gray, image_equ)
 	cv.imshow('image_equ',image_equ)
 	x = sum(sum(image_cah != image_equ))
 	if x:
 		print(x)
+	"""
 	#
 	cv.imshow('image',image_gray)
+	
 	ok, image_color = cap.read(image_color)
 	q_pressed = cv.waitKey(1) & 0xFF == ord('q') ## vivement pollKey
 	ok &= not q_pressed
