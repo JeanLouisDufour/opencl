@@ -80,7 +80,7 @@ def b2_cl_device_type(b):
 	return l
 def b2_cl_platform_id(b):
 	""
-	assert len(b) > 0, len(b)
+	assert len(b) >= 0, len(b) # ???? > 0 initialement
 	return b
 def b2_cl_ulong(b):
 	""
@@ -753,9 +753,10 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 	assert err == 0 ## -38 == CL_INVALID_MEM_OBJECT
 	"""
 	err = 0
+	eff_params = params
 	params = []
 	#read_arrays, write_arrays, read_buffers, write_buffers = [],[],[],[]
-	for ai, (at,ak,par) in enumerate(zip(arg_types,arg_kinds,params)):
+	for ai, (at,ak,par) in enumerate(zip(arg_types,arg_kinds,eff_params)):
 		if hasattr(at, '_length_'): # array
 			assert ak in 'RWX'
 			d_k = CL_MEM_READ_ONLY  if ak == 'R' else \
@@ -768,7 +769,13 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 			if par is None:
 				h_obj = at() # liaison plus tard par clEnqueueWriteBuffer ou ...Read...
 			else:
-				_= 2+2
+				assert par.size == at._length_  # ne pas confondre avec par.nbytes
+				assert par.dtype.itemsize == ctypes.sizeof(at._type_)
+				h_obj = par.ctypes.data_as(ctypes.POINTER(at._type_))
+				# accede par p[i*1080+j]
+				# h_obj = np.ctypeslib.as_ctypes(par) : <c_ubyte_Array_1080_Array_720 at 0x...>
+				# accede par h_obj[i][j]
+				# numpy.ctypeslib.as_array(obj, shape=None) : l'inverse
 		else:
 			assert ak == 'C'
 			h_obj = d_obj = at()

@@ -5,7 +5,7 @@ reference du kernel histogram_ctrl.cl
 import numpy as np
 
 def hist_ctrl(image, h, lut, new_image):
-	""
+	"returns scale"
 	assert image.ndim == 2 and image.shape == new_image.shape and \
 		h.shape == lut.shape == (256,)
 	sz = np.prod(image.shape)
@@ -33,12 +33,13 @@ def rand_image(image):
 	""
 	sh = image.shape
 	assert len(sh)==2
-	offset1, offset2 = _rng.integers(low=0, high=64, size=(2,), dtype=np.uint8)
+	offset1, offset2 = _rng.integers(low=0, high=4, size=(2,), dtype=np.uint8)
 	image[:] = _rng.integers(low=offset1, high=256-offset2, size=sh, dtype=np.uint8)
 
 if __name__ == "__main__":
 	import cv2 as cv
 	sh = (500,600)
+	sh = (720, 1080)
 	#
 	sz = np.prod(sh)
 	image = np.empty(sh, dtype=np.uint8)
