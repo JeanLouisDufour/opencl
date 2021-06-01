@@ -24,10 +24,11 @@ assert image.shape == (720, 1080)
 sz = prod(image.shape)
 image_new = np.empty(image.shape, image.dtype)
 image_ref = np.empty(image.shape, image.dtype)
+image_ref2 = np.empty(image.shape, image.dtype)
 
 h = np.empty((256,), np.uint32)
 lut = np.empty((256,), np.uint32)
-hist_ctrl(image, h, lut, image_ref)
+scale = hist_ctrl(image, h, lut, image_ref)
 
 # 1iere ligne : // macros : NCOL NLIN NWI
 
@@ -36,7 +37,8 @@ assert sz % NWI == 0 and 256 % NWI == 0
 kmacros = "-DNLIN=720 -DNCOL=1080 "
 kmacros = {'NLIN':image.shape[0], 'NCOL':image.shape[1], 'NWI':NWI}
 	
-rand_test = False
+rand_test = True
+chk_test = True
 
 def k_hist_init(im_in, im_out):
 	""
@@ -48,8 +50,8 @@ def k_hist_init(im_in, im_out):
 						   uint8_t * NWI],
 					 "RWWWWW",
 					 f"-DNLIN={sh[0]} -DNCOL={sh[1]} -DNWI={NWI}"
-					 #,dev_kind="CPU"
-					 ,params = [im_in, None, None, None, im_out]
+					 ,dev_kind="CPU"
+					 #,params = [im_in, None, None, None, im_out]
 	)
 	assert 'error' not in d, d['error']
 	d['host_params'] = [h for h,_ in d['params']]
@@ -57,12 +59,15 @@ def k_hist_init(im_in, im_out):
 
 def k_hist_run(d, im_in, im_out):
 	""
+	params = [None]*6
 	h1,h2,h3,h4,h5,h6 = d['host_params']
-	#h1[:] = im_in.flatten()
-	kernel_run(d, NWI, params, blocking_writes=False, blocking_reads=False, finish=True, local_work_size=NWI)
+	#h1[:] = im_in.flat[:]
+	kernel_run(d, NWI, params, blocking_writes=True, blocking_reads=True, finish=True, local_work_size=NWI)
 	#im_out.flat[:] = h5
 
 if __name__ == "__main__":
+	import cv2 as cv
+	
 	d = k_hist_init(image, image_new)
 
 	#data, hist, diag = \
@@ -70,23 +75,36 @@ if __name__ == "__main__":
 		[image.flatten(), [None]*256, [None]*NWI, [None]*1, [None]*256, image_new.flatten()]
 	# [[h1,_],[h2,_],[h3,_],[h4,_],[h5,_],[h6,_]] = d['params']
 	h1,h2,h3,h4,h5,h6 = d['host_params']
-	#h1[:] = image.flatten()  ### dans la vraie vie, une nouvelle image a chaque cycle
+	h1_flat = np.ctypeslib.as_array(h1)
+	h1_2d = h1_flat.reshape((720,1080))
+	h5_flat = np.ctypeslib.as_array(h5)
+	h5_2d = h5_flat.reshape((720,1080))
 	
-	nb_iter = 1
+	h1_2d[:,:] = image
+	
+	nb_iter = 1000
 	print('start',nb_iter)
 	tic = time.perf_counter()
 	for j in range(nb_iter):
 		if rand_test:
-			rand_image(image)
-			scale = hist_ctrl(image, h, lut, image_ref)
+			rand_image(h1_2d)
+			scale = hist_ctrl(h1_2d, h, lut, image_ref)
+			cv.equalizeHist(h1_2d, image_ref2)
+			assert all(image_ref.flat == image_ref2.flat)
 			#h1[:] = image.flatten()
-		kernel_run(d, NWI, params, blocking_writes=False, blocking_reads=False, finish=True, local_work_size=NWI)
-		if True:
+		#kernel_run(d, NWI, params, blocking_writes=False, blocking_reads=False, finish=True, local_work_size=NWI)
+		k_hist_run(d, image, image_new)
+		if chk_test:
 			assert all(di == 3 for di in h6), list(h6)
-			assert all(h2==h)
-			assert h3[0] == scale
-			assert all(h4 == lut)
-			assert all(h5 == image_ref.flatten())
+			assert all(h2==h), j
+			if h3[0] != scale:
+				print("!!!! ", j, "h3[0] != scale", h3[0], scale)
+			if not all(h4 == lut):
+				deltas = [(i,h,l) for i,(h,l) in enumerate(zip(h4,lut)) if h!=l]
+				print("!!!! ", j, "not all(h4 == lut)", deltas)
+			if not all(h5 == image_ref.flat):
+				print("!!!! ", j, "not all(h5 == image_ref.flat)")
+			#assert all(h5_2d.flat == image_ref.flat)
 	toc = time.perf_counter()
 	print('stop', (toc-tic)/nb_iter)
 	
