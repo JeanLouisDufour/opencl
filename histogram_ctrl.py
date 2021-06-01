@@ -66,7 +66,11 @@ def k_hist_run(d, im_in, im_out):
 	#im_out.flat[:] = h5
 
 if __name__ == "__main__":
-	import cv2 as cv
+	try:
+		import cv2 as cv
+		cv_ok = True
+	except ModuleNotFoundError:
+		cv_ok = False
 	
 	d = k_hist_init(image, image_new)
 
@@ -88,9 +92,11 @@ if __name__ == "__main__":
 	for j in range(nb_iter):
 		if rand_test:
 			rand_image(h1_2d)
-			scale = hist_ctrl(h1_2d, image_ref, h=h, lut=lut)
-			cv.equalizeHist(h1_2d, image_ref2)
-			assert all(image_ref.flat == image_ref2.flat)
+			if chk_test:
+				scale = hist_ctrl(h1_2d, image_ref, h=h, lut=lut)
+				if cv_ok:
+					cv.equalizeHist(h1_2d, image_ref2)
+					assert all(image_ref.flat == image_ref2.flat)
 			#h1[:] = image.flatten()
 		#kernel_run(d, NWI, params, blocking_writes=False, blocking_reads=False, finish=True, local_work_size=NWI)
 		k_hist_run(d, image, image_new)
