@@ -114,7 +114,7 @@ void histogram(__global uchar *data,
 	barrier(CLK_GLOBAL_MEM_FENCE | CLK_LOCAL_MEM_FENCE);
 	
 	for (int i = 0; i < numHistPerWorkItem; i++) {
-		cumul_and_then_lut[i+hist_offset] = (uint)round((float)(cumul_and_then_lut[i+hist_offset]) * *scale);
+		cumul_and_then_lut[i+hist_offset] = (uint)rint((float)(cumul_and_then_lut[i+hist_offset]) * *scale);
 	}
 	
 	barrier(CLK_GLOBAL_MEM_FENCE | CLK_LOCAL_MEM_FENCE);

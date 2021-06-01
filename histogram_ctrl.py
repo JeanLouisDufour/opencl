@@ -28,7 +28,7 @@ image_ref2 = np.empty(image.shape, image.dtype)
 
 h = np.empty((256,), np.uint32)
 lut = np.empty((256,), np.uint32)
-scale = hist_ctrl(image, h, lut, image_ref)
+scale = hist_ctrl(image, image_ref, h=h, lut=lut)
 
 # 1iere ligne : // macros : NCOL NLIN NWI
 
@@ -50,7 +50,7 @@ def k_hist_init(im_in, im_out):
 						   uint8_t * NWI],
 					 "RWWWWW",
 					 f"-DNLIN={sh[0]} -DNCOL={sh[1]} -DNWI={NWI}"
-					 ,dev_kind="CPU"
+					 #,dev_kind="CPU"
 					 #,params = [im_in, None, None, None, im_out]
 	)
 	assert 'error' not in d, d['error']
@@ -88,7 +88,7 @@ if __name__ == "__main__":
 	for j in range(nb_iter):
 		if rand_test:
 			rand_image(h1_2d)
-			scale = hist_ctrl(h1_2d, h, lut, image_ref)
+			scale = hist_ctrl(h1_2d, image_ref, h=h, lut=lut)
 			cv.equalizeHist(h1_2d, image_ref2)
 			assert all(image_ref.flat == image_ref2.flat)
 			#h1[:] = image.flatten()
@@ -98,7 +98,7 @@ if __name__ == "__main__":
 			assert all(di == 3 for di in h6), list(h6)
 			assert all(h2==h), j
 			if h3[0] != scale:
-				print("!!!! ", j, "h3[0] != scale", h3[0], scale)
+				print("!!!! ", j, "h3[0] != scale", h3[0], scale, (h3[0] - scale)/(h3[0] + scale))
 			if not all(h4 == lut):
 				deltas = [(i,h,l) for i,(h,l) in enumerate(zip(h4,lut)) if h!=l]
 				print("!!!! ", j, "not all(h4 == lut)", deltas)
