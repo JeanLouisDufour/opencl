@@ -1,8 +1,8 @@
 """
 BARRIER :
-Kalray =    0,0023 
-Intel =     0,0013 0.0023
-GPU Intel = 0,016  0.030
+Kalray    = 
+CPU Intel = 0.00041  0.00282
+GPU Intel = 0.00374  0.03129
 """
 import ctypes, time
 from lnk import *
@@ -36,16 +36,13 @@ NWI = 16
 assert sz % NWI == 0 and 256 % NWI == 0
 kmacros = "-DNLIN=720 -DNCOL=1080 "
 kmacros = {'NLIN':image.shape[0], 'NCOL':image.shape[1], 'NWI':NWI}
-	
-rand_test = True
-chk_test = True
 
-def k_hist_init(im_in, im_out):
+def k_hist_init(im_in, im_out, kernel_file="histogram_ctrl.cl"):
 	""
 	sh = im_in.shape
 	assert sh == im_out.shape
 	sz = np.prod(sh)
-	d = kernel_initiate("histogram_ctrl.cl",
+	d = kernel_initiate(kernel_file,
 					 [ uint8_t*sz, uint32_t*256, float_t*1, uint32_t*256, uint8_t*sz,\
 						   uint8_t * NWI],
 					 "RWWWWW",
@@ -62,17 +59,24 @@ def k_hist_run(d, im_in, im_out):
 	params = [None]*6
 	h1,h2,h3,h4,h5,h6 = d['host_params']
 	#h1[:] = im_in.flat[:]
-	kernel_run(d, NWI, params, blocking_writes=True, blocking_reads=True, finish=True, local_work_size=NWI)
+	kernel_run(d, NWI, params, blocking_writes=False, blocking_reads=False, finish=True, local_work_size=NWI)
 	#im_out.flat[:] = h5
 
 if __name__ == "__main__":
+	
+	rand_test = False
+	chk_test = False
+	nb_iter = 1000
+
 	try:
 		import cv2 as cv
 		cv_ok = True
 	except ModuleNotFoundError:
 		cv_ok = False
 	
-	d = k_hist_init(image, image_new)
+	d = k_hist_init(image, image_new \
+				 #, kernel_file="histogram_ctrl_EMPTY.cl"
+				 )
 
 	#data, hist, diag = \
 	params = \
@@ -86,7 +90,6 @@ if __name__ == "__main__":
 	
 	h1_2d[:,:] = image
 	
-	nb_iter = 1000
 	print('start',nb_iter)
 	tic = time.perf_counter()
 	for j in range(nb_iter):
