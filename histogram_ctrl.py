@@ -1,6 +1,6 @@
 """
 BARRIER :
-Kalray    = 
+Kalray    = 0.00063  0.00327
 CPU Intel = 0.00041  0.00282
 GPU Intel = 0.00374  0.03129
 """
@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 "%matplotlib inline"
 import imageio
-from math import prod
+prod = np.prod # from math import prod
 
 from histogram_ctrl_ref import hist_ctrl, rand_image
 

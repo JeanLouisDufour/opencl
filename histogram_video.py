@@ -11,7 +11,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 "%matplotlib inline"
 import imageio
-from math import prod, ceil
+from math import ceil
+prod = np.prod
 import cv2 as cv
 from histogram_ctrl_ref import hist_ctrl
 from histogram_ctrl import k_hist_init, k_hist_run

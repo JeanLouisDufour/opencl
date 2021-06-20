@@ -546,12 +546,14 @@ def gatherPlatformInfo(p_addr):
 		if r == 0:
 			assert buf_sz.value > 0
 			s = buf1024.value[:buf_sz.value].decode('cp1250')
-			print(f'{k} : {s}')
+		elif r == CL_INVALID_VALUE:
+			s = '!!! INVALID VALUE !!!'
 		elif r == CL_INVALID_PLATFORM:
 			print("CL_INVALID_PLATFORM")
 			return
 		else:
-			assert False        
+			assert False
+		print(f'{k} : {s}')     
 	r = clGetDeviceIDs(p_addr, CL_DEVICE_TYPE_ALL, 0, None, ndevs_REF)
 	assert r == 0, r
 	assert ndevs.value > 0
