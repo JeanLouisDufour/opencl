@@ -1,37 +1,94 @@
 import numpy as np
-import cv2 as cv
+#import cv2 as cv
 
-_ty_d = { # ne pas mettre directement np.uint16 ...
-	np.dtype('uint16'): cv.CV_16U
-	}
+FLT_EPSILON = np.spacing(np.float32(1))
+
+isfinite_print = True
+def isfinite(a):
+	""
+	if all(np.isfinite(a.flat)):
+		return True
+	else:
+		ok = True
+		if any(np.isnan(a.flat)):
+			if isfinite_print: print(f'NaN in {id(a),a.shape,a.dtype}')
+			ok = False
+		if any(np.isinf(a.flat)):
+			if isfinite_print: print(f'Inf in {id(a),a.shape,a.dtype}')
+			ok = False
+		assert not ok
+		return False
+
+###### np vs. cv #######
+# vis = np.zeros((2, 4), np.float32)
+# vis2 = cv.cvtColor(vis, cv.COLOR_GRAY2BGR) # -> shape = (2,4,3)
+#
+
+def swap(pair):
+	x,y = pair
+	return (y,x)
+
+# ne pas mettre directement np.uint16 ...
+cv2np_basetype = [np.dtype(s) for s in ['uint8','int8','uint16','int16','int32','float32','float64']]
+# #define 	CV_USRTYPE1   7
+np2cv_basetype = {t:i for i,t in enumerate(cv2np_basetype)}
 
 def type_np2cv(npt):
 	""
 	if isinstance(npt, np.ndarray):
 		sh = npt.shape
-		ty = npt.dtype
-	else:
-		ty = npt
-	if ty not in _ty_d:
-		r = None
-	else:
-		r = _ty_d[ty]
+		assert len(sh)==2, sh
+		npt = npt.dtype
+	r = np2cv_basetype[npt]
 	return r
 
 def type_cv2np(cvt):
 	""
-	if cvt == cv.CV_32F:
-		r = np.float32
-	else:
-		assert False, cvt
+	assert 0 <= cvt <= 6, cvt
+	r = cv2np_basetype[cvt]
 	return r
 
-class DynamicPool:
-	def request(self, cv_size, cv_type):
-		""
-		a = np.empty(cv_size, type_cv2np(cv_type))
-		return a
+def round_halfway_away0(x):
+	"0.5 -> 1, 1.5 -> 2, ..."
+	f = np.floor(x)
+	return f if x - f < 0.5 else f+1
 
+def nan_array(s,t):
+	""
+	a = np.empty(s, t); a[:] = np.NaN
+	return a
+
+class DynamicPool:
+	""
+	def __init__(self):
+		self.pool = {}
+	def request(self, cv_size, cv_type):
+		"cv or np type"
+		np_type = type_cv2np(cv_type)
+		a = nan_array(cv_size, np_type)
+		key = (a.shape, a.dtype)
+		a_id = id(a)
+		if key in self.pool:
+			l_used,_l_unused = self.pool[key]
+			assert a_id not in l_used
+			l_used[a_id] = a
+		else:
+			l_used = {a_id : a}
+			self.pool[key] = (l_used, {})
+		return a
+	def release(self, arr):
+		key = (arr.shape, arr.dtype)
+		l_used,l_unused = self.pool[key]
+		a_id = id(arr)
+		if a_id in l_used:
+			del l_used[a_id]
+			assert a_id not in l_unused
+			l_unused[a_id] = arr
+		elif a_id in l_unused:
+			print(f'release warning : {a_id,key} has already been released')
+		else:
+			print(f'release warning : {a_id,key} has never been pooled')
+		
 
 class ParamScalar:
 	def __init__(self, isUpdateAllowed, default, range_min=None, range_max=None, rangePrecision=None):
@@ -40,10 +97,19 @@ class ParamScalar:
 		self.val = self.default  ### surveillance de l'update non implementee
 		if range_min is not None:
 			self.range_min = range_min
+			assert default >= range_min
 		if range_max is not None:
 			self.range_max = range_max
+			assert default <= range_max
 		if rangePrecision is not None:
 			self.rangePrecision = rangePrecision
+
+class ParamEnum:
+	def __init__(self, isUpdateAllowed, name_list, default):
+		"name, help, isUpdateAllowed, default, ... sauf dans certains cas"
+		self.isUpdateAllowed, self.name_list, self.default = isUpdateAllowed, name_list, default
+		assert 0 <= default < len(name_list)
+		self.val = self.default  ### surveillance de l'update non implementee
 
 class GeneSettings:
 	pass

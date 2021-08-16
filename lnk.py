@@ -539,13 +539,17 @@ clErrorCodes = [
 	]
 assert clErrorCodes[30] == 'INVALID_VALUE'
 
-def gatherPlatformInfo(p_addr):
+def gatherPlatformInfo(p_addr, verbose=True):
 	#
+	pf_ext = []
 	for k_i,k in enumerate(cl_platform_info_TAGS, start=cl_platform_info_START):
 		r = clGetPlatformInfo(p_addr, k_i, 1024, buf1024, buf_sz_REF)
 		if r == 0:
 			assert buf_sz.value > 0
 			s = buf1024.value[:buf_sz.value].decode('cp1250')
+			if k == 'EXTENSIONS':
+				pf_ext = s.split()
+				assert all(e.isidentifier() and e.startswith('cl_') for e in pf_ext)
 		elif r == CL_INVALID_VALUE:
 			s = '!!! INVALID VALUE !!!'
 		elif r == CL_INVALID_PLATFORM:
@@ -577,7 +581,13 @@ def gatherPlatformInfo(p_addr):
 			assert s == b'' or s[-1] != 0, s
 			if fn is not None:
 				s = fn(s)
-			print(f'{k} : {s}')
+			if k == 'EXTENSIONS':
+				dv_ext = s.split()
+				assert all(e.isidentifier() and e.startswith('cl_') for e in dv_ext)
+				assert set(pf_ext) <= set(dv_ext)
+				s = ' '.join(e for e in dv_ext if e not in pf_ext)
+			if verbose or k in {'TYPE','MAX_COMPUTE_UNITS','ENDIAN_LITTLE','GLOBAL_MEM_CACHELINE_SIZE','NAME','EXTENSIONS'}:
+				print(f'{k} : {s}')
 
 #mylib = None
 
@@ -695,6 +705,8 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 			for mn,mv in macros.items():
 				if mv in ("",None):
 					txt += "-D"+mn
+				elif isinstance(mv,str):
+					txt += "-D"+mn+"="+mv
 				else:
 					txt += "-D"+mn+"="+str(mv)
 				txt += " "
@@ -778,7 +790,14 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 				# h_obj = np.ctypeslib.as_ctypes(par) : <c_ubyte_Array_1080_Array_720 at 0x...>
 				# accede par h_obj[i][j]
 				# numpy.ctypeslib.as_array(obj, shape=None) : l'inverse
+		elif ak == 'I':
+			assert isinstance(at,int)
+			h_obj = d_obj = int32_t(at)
+		elif ak == 'F':
+			assert isinstance(at,float)
+			h_obj = d_obj = float_t(at)
 		else:
+			assert False, ak
 			assert ak == 'C'
 			h_obj = d_obj = at()
 		err |= clSetKernelArg(kernel, ai, ctypes.sizeof(d_obj), Ref(d_obj))
@@ -871,7 +890,7 @@ if ICD_status == 0:
 	for p in range(num_platforms.value):
 		print(f'************* platform {p} *************')
 		p_addr = platforms_vec[p]
-		platforms_inf[p] = gatherPlatformInfo(p_addr)
+		platforms_inf[p] = gatherPlatformInfo(p_addr, verbose=False)
 elif ICD_status == -1001:
     platform_inf = gatherPlatformInfo(None)
     
