@@ -653,7 +653,7 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 		kfd.close()
 	else:
 		kfile = None
-	assert len(arg_types) == len(arg_kinds)
+	assert len(arg_types) == len(arg_kinds), (len(arg_types), len(arg_kinds))
 	assert all(isinstance(x, (_PyCArrayType, int,float)) for x in arg_types)
 	assert all(c in "DFILRWX" for c in arg_kinds)
 	if params is None:
@@ -801,8 +801,10 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 			assert ak == 'C'
 			h_obj = d_obj = at()
 		err |= clSetKernelArg(kernel, ai, ctypes.sizeof(d_obj), Ref(d_obj))
+		if err != 0:
+			_ = 2+2
 		params.append([h_obj, d_obj])
-	assert err == 0
+	assert err == 0, err
 	return {
 		'src': ksrc, 'arg_types': arg_types, 'arg_kinds': arg_kinds,
 		'name': kname, 'args': kargs,

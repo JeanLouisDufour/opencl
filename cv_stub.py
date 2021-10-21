@@ -1,10 +1,22 @@
 import numpy as np
 import cv2 as cv_true
 
-CV_8U, CV_8S, CV_16U, CV_16S, CV_32S, CV_32F, CV_64F = range(7)
+# core/hal/interface.h
+CV_CN_MAX = 512
+CV_CN_SHIFT = 3
+CV_DEPTH_MAX = (1 << CV_CN_SHIFT)
+CV_8U, CV_8S, CV_16U, CV_16S, CV_32S, CV_32F, CV_64F, CV_16F = range(8) # == xxC1
 
-CV_8UC3, CV_8SC3, CV_16UC3, CV_16SC3, CV_32SC3, CV_32FC3, CV_64FC3 = range(16,16+7)
+CV_MAT_DEPTH_MASK = (CV_DEPTH_MAX - 1)
+def CV_MAT_DEPTH(flags): ((flags) & CV_MAT_DEPTH_MASK)
+def CV_MAKETYPE(depth,cn): (CV_MAT_DEPTH(depth) + (((cn)-1) << CV_CN_SHIFT))
+CV_8UC3, CV_8SC3, CV_16UC3, CV_16SC3, CV_32SC3, CV_32FC3, CV_64FC3, CV_16FC3 = range(16,16+8)
 
+# core/cvdef.h
+CV_MAT_CN_MASK = ((CV_CN_MAX - 1) << CV_CN_SHIFT)
+def CV_MAT_CN(flags): ((((flags) & CV_MAT_CN_MASK) >> CV_CN_SHIFT) + 1)
+
+#
 NORM_INF, NORM_L1, NORM_L2 = 1,2,4
 
 def add(src1, src2, dst=None, mask=None, dtype=None): # ->	dst
@@ -212,6 +224,84 @@ def resize(src, dsize, dst=None, fx=0.0, fy=0.0, interpolation=INTER_LINEAR): # 
 	cv_true.resize(src, dsize, dst, fx, fy, interpolation)
 	return dst
 
+##################################
+# core/src/copy.cpp et .../copymakeborder.cl
+
+def copyMakeBorder(src, top, bottom, left, right, borderType, dst=None, value=None):
+	""
+	H,W = src.shape
+	H1 = H + top + bottom
+	W1 = W + left + right
+	if dst is None:
+		dst = np.empty((H1,W1), dtype=src.dtype)
+	else:
+		assert dst.shape == (H1,W1) and dst.dtype == src.dtype
+	dst[top:top+H, left:left+W] = src
+	if borderType == BORDER_CONSTANT:
+		val = 0 if value is None else value
+		# top
+		for li in range(top):
+			dst[li,:] = val
+		# sides
+		for li in range(top,top+H):
+			dst[li, 0:left] = val
+			#dst[li, left:left+W] = src[li-top,:]
+			dst[li, -right:0] = val
+		# bottom
+		for li in range(-bottom,0):
+			dst[li,:] = val
+	elif borderType == BORDER_REFLECT_101:
+		assert value is None
+		# top
+		for li in range(top):
+			dst[li,:] = val
+		# sides
+		for li in range(top,top+H):
+			dst[li, 0:left] = val
+			dst[li, -right:0] = val
+		# bottom
+		for li in range(-bottom,0):
+			dst[li,:] = val
+	else:
+		assert False
+	return dst
+
+##################################
+
+# core.hpp
+class Algorithm:
+	pass
+
+# imgproc.hpp
+class CLAHE(Algorithm):
+	pass
+
+# clahe.cpp
+class CLAHE_Impl(CLAHE):
+	def __init__(self, clipLimit = 40.0, tilesX = 8, tilesY = 8):
+		self.clipLimit_ = clipLimit
+		self.tilesX_ = tilesX
+		self.tilesY_ = tilesY
+	
+	def apply(self, src, dst = None):
+		""
+		assert len(src.shape)==2 and src.dtype in (np.uint8, np.uint16) # CV_8UC1 CV_16UC1
+		# OpenCL : uniquement en CV_8UC1
+		if dst is None:
+			dst = np.empty(src.shape, dtype=src.dtype)
+		else:
+			assert dst.shape == src.shape and dst.dtype == src.dtype
+		if src.shape[1] % self.tilesX_ == 0 and src.shape[0] % self.tilesY_ == 0:
+			tileWH = (src.shape[1] // self.tilesX_ , src.shape[0] // self.tilesY_)
+			_srcForLut = src
+		else:
+			_srcForLut = copyMakeBorder(src, 0, tilesY_ - (src.shape[0] % tilesY_), 0, tilesX_ - (src.shape[1] % tilesX_), BORDER_REFLECT_101)
+		
+		return dst
+
+# imgproc.hpp
+def createCLAHE(clipLimit = 40.0, tileGridSize_WH = (8, 8)):
+	return CLAHE_Impl(clipLimit, *tileGridSize_WH)
 
 ##################################
 
@@ -237,12 +327,15 @@ if __name__ == "__main__":
 	assert CV_32SC3 == cv_true.CV_32SC3
 	assert NORM_L1 == cv_true.NORM_L1
 	
-	print('********** add ************')
+	u8_1 = np.empty((100,100), dtype=np.uint8)
 	
 	f1 = np.empty((500,500), dtype=np.float32)
 	f2 = np.empty((500,500), dtype=np.float32)
 	f3 = np.empty((500,500), dtype=np.float32)
 	f4 = np.empty((500,500), dtype=np.float32)
+	
+	print('********** add ************')
+	
 	for i in range(Nruns):
 		rand_mat(f1)
 		rand_mat(f2)
@@ -308,11 +401,21 @@ if __name__ == "__main__":
 		if x:
 			print('PB',x)
 	
+	print('****** copyMakeBorder *******')
+	
+	rand_mat(u8_1)
+	x = cv_true.copyMakeBorder(u8_1, 1,2,3,4,cv_true.BORDER_CONSTANT)
+	y = copyMakeBorder(u8_1, 1,2,3,4,BORDER_CONSTANT)
+	if x.shape != y.shape or any((x != y).flat):
+		print('KO')
+	
+	
 	print('****** filter2D *******')
 	
 	kernel= np.array([[1.0, 2.0, 1.0],
 				[2.0, 4.0, 2.0],
-				[1.0, 2.0, 1.0]], dtype = np.float32) * (1/16)
+				[1.0, 2.0, 1.0]], dtype = np.float32)
+	kernel /= sum(kernel.flat) # sum(...) est un float64, mais kernel reste un float32
 	for i in range(Nruns):
 		rand_mat(f1)
 		filter2D(f1, -1, kernel, dst=f3)
@@ -321,5 +424,23 @@ if __name__ == "__main__":
 		if x:
 			print('PB',x)
 	
+	print('****** filter2D Bis *******')
 	
+	from scipy import ndimage
+	
+	an = 5
+	a = np.array(range(an*an)).reshape((an,an))
+	k = np.array([[0,-1,0],[-1,5,-1],[0,-1,0]])
+	
+	view_shape = tuple(np.subtract(a.shape, k.shape) + 1) + k.shape
+	strides = a.strides + a.strides
+	sub_matrices = np.lib.stride_tricks.as_strided(a,view_shape,strides)
+	m = np.einsum('ij,ijkl->kl',k,sub_matrices)
+	assert (m == np.array([[6,7,8],[11,12,13],[16,17,18]])).all()
+	
+	m1 = ndimage.convolve(a, k, mode='constant', cval=0)
+	assert m1.shape == (an,an) and (m1[1:an-1,1:an-1] == m).all()
+	
+	m2 = cv_true.filter2D(np.float32(a), -1, np.float32(k), borderType=cv_true.BORDER_CONSTANT) # CV ne supporte pas INT8
+	assert m2.shape == (an,an) and (m1 == m2).all()
 	
