@@ -1,22 +1,6 @@
 import ctypes, re, os, sys
 _PyCArrayType = type(ctypes.c_float*36) # dans _ctypes, mais inaccessible autrement
 
-"""
-/cygdrive/c/ProgramData/Anaconda3/Library/bin/OpenCL.dll
-/cygdrive/c/ProgramData/Anaconda3/pkgs/khronos-opencl-icd-loader-2020.12.18-h8d14728_0/Library/bin/OpenCL.dll
-/cygdrive/c/Users/F074018/.conda/pkgs/khronos-opencl-icd-loader-2020.12.18-h8d14728_0/Library/bin/OpenCL.dll
-/cygdrive/c/Windows/servicing/LCU/Package_for_RollupFix~31bf3856ad364e35~amd64~~17763.1577.1.5/amd64_dual_rdvgwddmdx11.inf_31bf3856ad364e35_10.0.17763.134_none_79f739fa0dcd1ce8/f/opencl.dll
-/cygdrive/c/Windows/servicing/LCU/Package_for_RollupFix~31bf3856ad364e35~amd64~~17763.1577.1.5/amd64_dual_rdvgwddmdx11.inf_31bf3856ad364e35_10.0.17763.134_none_79f739fa0dcd1ce8/r/opencl.dll
-/cygdrive/c/Windows/servicing/LCU/Package_for_RollupFix~31bf3856ad364e35~amd64~~17763.1697.1.9/amd64_dual_rdvgwddmdx11.inf_31bf3856ad364e35_10.0.17763.134_none_79f739fa0dcd1ce8/f/opencl.dll
-/cygdrive/c/Windows/servicing/LCU/Package_for_RollupFix~31bf3856ad364e35~amd64~~17763.1697.1.9/amd64_dual_rdvgwddmdx11.inf_31bf3856ad364e35_10.0.17763.134_none_79f739fa0dcd1ce8/r/opencl.dll
-/cygdrive/c/Windows/System32/DriverStore/FileRepository/rdvgwddmdx11.inf_amd64_2a04ea66c78bd1a9/opencl.dll
-/cygdrive/c/Windows/System32/OpenCL.DLL
-/cygdrive/c/Windows/SysWOW64/opencl.dll
-/cygdrive/c/Windows/WinSxS/amd64_dual_rdvgwddmdx11.inf_31bf3856ad364e35_10.0.17763.1_none_f5eacb26e053cd47/opencl.dll
-/cygdrive/c/Windows/WinSxS/wow64_microsoft-windows-r..xwddmdriver-wow64-c_31bf3856ad364e35_10.0.17763.1_none_a1ee56d8046354ed/opencl.dll
-/cygdrive/c/Windows/WinSxS/amd64_dual_rdvgwddmdx11.inf_31bf3856ad364e35_10.0.17763.134_none_79f739fa0dcd1ce8/opencl.dll
-"""
-
 Kalray = False
 if sys.platform == 'linux':
 	if os.path.exists(r'/opt/kalray'):
@@ -30,79 +14,58 @@ else:
 	dll = r'c:\Windows\System32\OpenCL.DLL'
 	# dll = r'c:\Windows\SysWOW64\OpenCL.DLL' # OSError: [WinError 193] %1 n’est pas une application Win32 valide
 
-######################
+######## types de base ##############
+
+def b2_cl_uint(b):
+	""
+	assert len(b) == 4, len(b)
+	return int.from_bytes(b, 'little') # unsigned
+
+def b2_cl_ulong(b):
+	""
+	assert len(b) == 8, len(b)
+	return int.from_bytes(b, 'little') # unsigned
+
+####### types derives #######
 
 def b2_cl_bool(b):
 	""
-	assert b in (b'',b'\x00',b'\x01'), b ## b'\x00' normalement n'arrive pas
-	return b == b'\x01'
-def b2_cl_command_queue_properties(b):
-	""
-	assert len(b) > 0, len(b)
-	return b
-def b2_cl_device_affinity_domain(b):
-	""
-	assert len(b) in (0,), len(b)
-	return b
-def b2_cl_device_exec_capabilities(b):
-	""
-	assert len(b) > 0, len(b)
-	return b
-def b2_cl_device_fp_config(b):
-	""
-	assert len(b) in (0,1), len(b)
-	return b
-def b2_cl_device_id(b):
-	""
-	assert len(b) in (0,), len(b)
-	return b
-def b2_cl_device_local_mem_type(b):
-	""
-	assert len(b) > 0, len(b)
-	return b
-def b2_cl_device_mem_cache_type(b):
-	""
-	assert len(b) > 0, len(b)
-	return b
+	booleen = b2_cl_uint(b)
+	assert 0 <= booleen <= 1, booleen
+	return booleen
+b2_cl_command_queue_properties = b2_cl_ulong
+b2_cl_device_affinity_domain = b2_cl_ulong
+b2_cl_device_exec_capabilities = b2_cl_ulong
+b2_cl_device_fp_config = b2_cl_ulong
+b2_cl_device_id = b2_cl_ulong
+b2_cl_device_local_mem_type = b2_cl_uint
+b2_cl_device_mem_cache_type = b2_cl_uint
 def b2_cl_device_partition_property_ARRAY(b):
 	""
-	assert len(b) in (0,2), len(b)
-	return b
+	#assert len(b) in (0,2), len(b)
+	elt_sz = 4
+	assert len(b) % elt_sz == 0, b
+	return [int.from_bytes(b[i*elt_sz:(i+1)*elt_sz], 'little') for i in range(len(b)//elt_sz)]
 def b2_cl_device_type(b):
 	""
-	assert len(b) <= 1, len(b)
-	dt = 0 if len(b)== 0 else b[0]
+	dt = b2_cl_ulong(b)
 	assert dt < (1<<5), dt
 	l = []
 	for dtn_i, dtn in enumerate(cl_device_type_TAGS):
 		if dt & (1<<dtn_i):
 			l.append(dtn)
 	return l
-def b2_cl_platform_id(b):
-	""
-	assert len(b) >= 0, len(b) # ???? > 0 initialement
-	return b
-def b2_cl_ulong(b):
-	""
-	assert len(b) <= 8, len(b)
-	return int.from_bytes(b, 'little')
-def b2_cl_uint(b):
-	""
-	assert len(b) <= 4, len(b)
-	return int.from_bytes(b, 'little')
-def b2_size_t(b):
-	""
-	assert len(b) <= 8, len(b)
-	return int.from_bytes(b, 'little')
+b2_cl_platform_id = b2_cl_ulong
+b2_size_t = b2_cl_ulong
 def b2_size_t_ARRAY(b):
 	""
-	assert len(b) in (0,1), len(b)
-	if len(b):
-		2+2
-	return b
+	elt_sz = 8
+	assert len(b) % elt_sz == 0, len(b)
+	return [int.from_bytes(b[i*elt_sz:(i+1)*elt_sz], 'little') for i in range(len(b)//elt_sz)]
 def b2_str(b):
 	""
-	return b.decode('cp1250')
+	assert b == b'' or b[-1] == 0, b
+	return b[:-1].decode('cp1250') if b != b'' else ''
 
 #### BEGIN cl.h ######
 
@@ -404,79 +367,6 @@ for _l in api:
 		_fd.argtypes = _l[2:]
 	setattr(_m, _fn, _fd)
 
-"""
-clGetPlatformIDs = mylib.clGetPlatformIDs
-clGetPlatformIDs.restype = cl_int
-clGetPlatformIDs.argtypes = [cl_uint, ctypes.POINTER(cl_platform_id), ctypes.POINTER(cl_uint)]
-
-clGetPlatformInfo = mylib.clGetPlatformInfo
-clGetPlatformInfo.restype = cl_int
-clGetPlatformInfo.argtypes = [cl_platform_id, cl_platform_info, size_t, ctypes.POINTER(void), ctypes.POINTER(size_t)]
-
-clGetDeviceIDs = mylib.clGetDeviceIDs
-clGetDeviceIDs.restype = cl_int
-clGetDeviceIDs.argtypes = [cl_platform_id, cl_device_type, cl_uint, ctypes.POINTER(cl_device_id), ctypes.POINTER(cl_uint)]
-
-clGetDeviceInfo = mylib.clGetDeviceInfo
-clGetDeviceInfo.restype = cl_int
-clGetDeviceInfo.argtypes = [cl_device_id, cl_device_info, size_t, ctypes.c_void_p, ctypes.POINTER(size_t)]
-
-CL_CALLBACK_context = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p)
-def DFLT_CALLBACK_context(a,b,c,d): print("default CALLBACK context\n")
-DFLT_CALLBACK_context = CL_CALLBACK_context(DFLT_CALLBACK_context)
-NULL_CALLBACK_context = ctypes.cast(None, CL_CALLBACK_context)
-assert bytes(memoryview(NULL_CALLBACK_context)) == b'\x00\x00\x00\x00\x00\x00\x00\x00'
-	
-clCreateContext = mylib.clCreateContext
-clCreateContext.restype = cl_context
-clCreateContext.argtypes = [ctypes.POINTER(cl_context_properties), cl_uint, ctypes.POINTER(cl_device_id), CL_CALLBACK_context, ctypes.c_void_p, ctypes.POINTER(cl_int)]
-
-clReleaseContext = mylib.clReleaseContext
-clReleaseContext.restype = cl_int
-clReleaseContext.argtypes = [cl_context]
-
-clCreateCommandQueue = mylib.clCreateCommandQueue
-clCreateCommandQueue.restype = cl_command_queue
-clCreateCommandQueue.argtypes = [cl_context, cl_device_id, cl_command_queue_properties, ctypes.POINTER(cl_int)]
-
-clReleaseCommandQueue = mylib.clReleaseCommandQueue
-clReleaseCommandQueue.restype = cl_int
-clReleaseCommandQueue.argtypes = [cl_command_queue]
-
-clCreateProgramWithSource = mylib.clCreateProgramWithSource
-clCreateProgramWithSource.restype = cl_program
-clCreateProgramWithSource.argtypes = [cl_context, cl_uint, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(size_t), ctypes.POINTER(cl_int)]
-
-clReleaseProgram = mylib.clReleaseProgram
-clReleaseProgram.restype = cl_int
-clReleaseProgram.argtypes = [cl_program]
-
-CL_CALLBACK_program = ctypes.CFUNCTYPE(None, cl_program, ctypes.c_void_p)
-def DFLT_CALLBACK_program(a,b): print("default CALLBACK program\n")
-DFLT_CALLBACK_program = CL_CALLBACK_program(DFLT_CALLBACK_program)
-NULL_CALLBACK_program = ctypes.cast(None, CL_CALLBACK_program)
-assert bytes(memoryview(NULL_CALLBACK_program)) == b'\x00\x00\x00\x00\x00\x00\x00\x00'
-
-clBuildProgram = mylib.clBuildProgram
-clBuildProgram.restype = cl_int
-clBuildProgram.argtypes = [cl_program, cl_uint, _P(cl_device_id), ctypes.c_char_p, CL_CALLBACK_program, ctypes.c_void_p]
-
-clCreateKernel = mylib.clCreateKernel
-clCreateKernel.restype = cl_kernel
-clCreateKernel.argtypes = [cl_program, ctypes.c_char_p, _P(cl_int)]
-
-clReleaseKernel = mylib.clReleaseKernel
-clReleaseKernel.restype = cl_int
-clReleaseKernel.argtypes = [cl_kernel]
-
-clCreateBuffer = mylib.clCreateBuffer
-clCreateBuffer.restype = cl_mem
-clCreateBuffer.argtypes = [cl_context, cl_mem_flags, size_t, ctypes.c_void_p, _P(cl_int)]
-
-clReleaseMemObject = mylib.clReleaseMemObject
-clReleaseMemObject.restype = cl_int
-clReleaseMemObject.argtypes = [cl_mem]
-"""
 Ref = _R = ctypes.byref
 
 buf1024 = ctypes.create_string_buffer(1024)
@@ -509,7 +399,10 @@ CL_KERNEL_ARG_INFO_NOT_AVAILABLE             = -19
 # no man's land
 CL_INVALID_VALUE                             = -30
 CL_INVALID_DEVICE_TYPE                       = -31
-CL_INVALID_PLATFORM 					     = -32
+CL_INVALID_PLATFORM                          = -32
+#
+CL_INVALID_WORK_GROUP_SIZE                   = -54
+CL_INVALID_WORK_ITEM_SIZE                    = -55
 
 clErrorCodes = [
 "SUCCESS",#                                  0
@@ -532,21 +425,29 @@ clErrorCodes = [
 "LINK_PROGRAM_FAILURE",#                     -17
 "DEVICE_PARTITION_FAILED",#                  -18
 "KERNEL_ARG_INFO_NOT_AVAILABLE",#            -19
-	] + [""]*10 + [
+	] + [f"*** UNKNOWN ERROR CODE -{i} ***" for i in range(20,30)] + [
 "INVALID_VALUE",#                            -30
 "INVALID_DEVICE_TYPE",#                      -31
 "INVALID_PLATFORM",#                         -32
+	] + [f"*** UNKNOWN ERROR CODE -{i} ***" for i in range(33,54)] + [
+"INVALID_WORK_GROUP_SIZE",#                  -54
+"INVALID_WORK_ITEM_SIZE",#                   -55
 	]
-assert clErrorCodes[30] == 'INVALID_VALUE'
+assert clErrorCodes[30] == 'INVALID_VALUE' and clErrorCodes[55] == 'INVALID_WORK_ITEM_SIZE'
 
 def gatherPlatformInfo(p_addr, verbose=True):
 	#
+	result = {}
 	pf_ext = []
 	for k_i,k in enumerate(cl_platform_info_TAGS, start=cl_platform_info_START):
+		buf_sz.value = 10000000
 		r = clGetPlatformInfo(p_addr, k_i, 1024, buf1024, buf_sz_REF)
 		if r == 0:
-			assert buf_sz.value > 0
-			s = buf1024.value[:buf_sz.value].decode('cp1250')
+			assert buf_sz.value > 0 and buf_sz.value <= 1024
+			# s = buf1024.value[:buf_sz.value].decode('cp1250')
+			s = buf1024[:buf_sz.value]
+			assert isinstance(s,bytes)
+			s = b2_str(s)
 			if k == 'EXTENSIONS':
 				pf_ext = s.split()
 				assert all(e.isidentifier() and e.startswith('cl_') for e in pf_ext)
@@ -557,7 +458,9 @@ def gatherPlatformInfo(p_addr, verbose=True):
 			return
 		else:
 			assert False
-		print(f'{k} : {s}')     
+		print(f'{k} : {s}')
+		result[k] = s
+	result['devices'] = devices = []  
 	r = clGetDeviceIDs(p_addr, CL_DEVICE_TYPE_ALL, 0, None, ndevs_REF)
 	assert r == 0, r
 	assert ndevs.value > 0
@@ -567,7 +470,10 @@ def gatherPlatformInfo(p_addr, verbose=True):
 	for i in range(ndevs.value):
 		print(f'** device {i} **')
 		d_addr = devices_vec[i]
+		dev = {}
 		for k_i, (k,fn) in enumerate(cl_device_info_TAGS, start=cl_device_info_START):
+			if k.startswith('MAX_WORK_'):
+				_ = 2+2
 			buf_sz.value = 10000000
 			r = clGetDeviceInfo(d_addr, k_i, 1024, buf1024, buf_sz_REF)
 			if r == 0:
@@ -577,8 +483,10 @@ def gatherPlatformInfo(p_addr, verbose=True):
 				buf1024[:32] = b'!!!! clGetDeviceInfo FAILED !!!!'
 				buf_sz.value = 32
 				fn = None
-			s = buf1024.value[:buf_sz.value]
-			assert s == b'' or s[-1] != 0, s
+			#s = buf1024.value[:buf_sz.value]
+			#assert s == b'' or s[-1] != 0, s
+			s = buf1024[:buf_sz.value]
+			assert isinstance(s,bytes)
 			if fn is not None:
 				s = fn(s)
 			if k == 'EXTENSIONS':
@@ -586,10 +494,28 @@ def gatherPlatformInfo(p_addr, verbose=True):
 				assert all(e.isidentifier() and e.startswith('cl_') for e in dv_ext)
 				assert set(pf_ext) <= set(dv_ext)
 				s = ' '.join(e for e in dv_ext if e not in pf_ext)
-			if verbose or k in {'TYPE','MAX_COMPUTE_UNITS','ENDIAN_LITTLE','GLOBAL_MEM_CACHELINE_SIZE','NAME','EXTENSIONS'}:
+			if verbose or k in {
+					'ENDIAN_LITTLE',
+					'EXTENSIONS',
+					'GLOBAL_MEM_CACHELINE_SIZE',
+					'MAX_COMPUTE_UNITS',
+					'MAX_WORK_GROUP_SIZE',
+					'MAX_WORK_ITEM_SIZES',
+					'NAME',
+					'TYPE',
+					}:
 				print(f'{k} : {s}')
+			dev[k] = s
+		devices.append(dev)
+	return result
 
 #mylib = None
+
+# __kernel __attribute__((reqd_work_group_size(LOCAL_SIZE_X,LOCAL_SIZE_Y,1)))
+# #define TEMPLATE(name,type) CONCAT(name,type)
+# __kernel void TEMPLATE(lrn_full_no_scale,Dtype)(const int nthreads, __global const Dtype* in,
+
+re_kernel = re.compile(r'kernel\s+void\s+')
 
 def get_kernels(ksrc, macros = None):
 	""
@@ -634,7 +560,7 @@ float_t = ctypes.c_float
 double_t = ctypes.c_double
 
 
-def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, params=None):
+def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, params=None, kname=None):
 	""" exemple sur vecadd :
 		__kernel void vecAdd(  __global FLOAT *a,  
                        __global FLOAT *b, 
@@ -661,7 +587,13 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 	if len(params) < len(arg_types):
 		params += [None]*(len(arg_types)-len(params))
 	kl = get_kernels(ksrc, macros)
-	[kname,_,kargs] = kl[0]
+	if kname is None:
+		[kname,_,kargs] = kl[0]
+	else:
+		for kn,_,kargs in kl:
+			if kn == kname:
+				break
+		assert kn == kname
 	assert len(kargs) == len(arg_types), (len(kargs) , len(arg_types))
 	#
 	"""
@@ -790,6 +722,7 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 				# h_obj = np.ctypeslib.as_ctypes(par) : <c_ubyte_Array_1080_Array_720 at 0x...>
 				# accede par h_obj[i][j]
 				# numpy.ctypeslib.as_array(obj, shape=None) : l'inverse
+				# ESSAYER : at.from_buffer
 		elif ak == 'I':
 			assert isinstance(at,int)
 			h_obj = d_obj = int32_t(at)
@@ -813,7 +746,18 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 		'program': program, 'kernel': kernel,
 		'params' : params,
 		 }
-	
+
+def kernel_write(d,i, value=None, blocking=True):
+	""
+	p_h, p_d = d['params'][i]
+	if value == 0:
+		ctypes.memset(p_h,0, )
+	if value is not None:
+		assert len(value) == p_h._length_
+		
+		p_h[:] = value
+	return clEnqueueWriteBuffer(d['queue'], p_d, blocking, 0, ctypes.sizeof(p_h), p_h, 0, None, None)
+
 _kernel_run_gsz = (size_t * 3)(0)
 _kernel_run_lsz = (size_t * 3)(0)
 def kernel_run(d,n,eff_params, blocking_writes=CL_TRUE, blocking_reads=CL_TRUE, finish=True, local_work_size=None):
@@ -841,14 +785,20 @@ def kernel_run(d,n,eff_params, blocking_writes=CL_TRUE, blocking_reads=CL_TRUE, 
 			p_h.value = p_eff
 	assert err == 0
 	kernel = d['kernel']
-	_kernel_run_gsz[0] = n #globalSize = (size_t * 1)(n)
-	if local_work_size:
-		_kernel_run_lsz[0] = local_work_size
+	global_work_size = [n] if isinstance(n,int) else n
+	wkdims = len(global_work_size)
+	_kernel_run_gsz[:wkdims] = global_work_size
+	if local_work_size is not None:
+		local_work_size = [local_work_size] if isinstance(local_work_size,int) else local_work_size
+		assert len(local_work_size) == wkdims
+		_kernel_run_lsz[:wkdims] = local_work_size
 		lws = _kernel_run_lsz
 	else:
 		lws = None
-	err = clEnqueueNDRangeKernel(queue, kernel, 1, None, _kernel_run_gsz, lws, 0, None, None)
-	assert err == 0
+	err = clEnqueueNDRangeKernel(queue, kernel, wkdims, None, _kernel_run_gsz, lws, 0, None, None)
+	if err != 0:
+		assert False, err
+	assert err == 0, err
 	#if d['device_type'] == CL_DEVICE_TYPE_CPU:
 	#	err = clFinish(queue)
 	#	assert err == 0
@@ -894,34 +844,16 @@ if ICD_status == 0:
 		p_addr = platforms_vec[p]
 		platforms_inf[p] = gatherPlatformInfo(p_addr, verbose=False)
 elif ICD_status == -1001:
-    platform_inf = gatherPlatformInfo(None)
-    
-    
+	printf(f"WARNING : bad return value of clGetPlatformIDs : {ICD_status}")
+	platform_inf = gatherPlatformInfo(None)
 else:
-    printf(f"ERREUR : bad return value of clGetPlatformIDs : {ICD_status}")
-    assert False
+	printf(f"ERREUR : bad return value of clGetPlatformIDs : {ICD_status}")
+	assert False
 		
 if __name__ == "__main__": # vecAdd
-	from math import sin, cos, ceil
+	from math import ceil, cos, prod, sin
+	from random import randrange, random
 	
-	print("\ntest interne")
-	
-	ksrc = (
-"#define FLOAT float                                             \n"
-"__kernel void vecAdd(  __global FLOAT *a,                       \n"
-"                       __global FLOAT *b,                       \n"
-"                       __global FLOAT *c,                       \n"
-"                       const unsigned int n)                    \n"
-"{                                                               \n"
-"    //Get our global thread ID                                  \n"
-"    int id = get_global_id(0);                                  \n"
-"                                                                \n"
-"    //Make sure we do not go out of bounds                      \n"
-"    if (id < 10)                                                 \n"
-"        c[id] = a[id] + b[id];                                  \n"
-"    else c[id] = id;                                  \n"
-"}                                                               \n"
-)
 	ksrc = """
 #define FLOAT float                                     
 __kernel void vecAdd(  __global FLOAT *a,  
@@ -938,6 +870,47 @@ __kernel void vecAdd(  __global FLOAT *a,
     else c[id] = id;                        
 }                                            
 """
+	ksrc_hist = """
+__kernel void histogram(__global uchar data[NLIN][NCOL], __global int histogram[256]) {
+	int gid0 = get_global_id(0), gid1 = get_global_id(1);
+#ifdef UNSAFE
+	histogram[data[gid0][gid1]] += 1;
+#else
+	atomic_inc( &histogram[data[gid0][gid1]] );
+#endif
+}
+	"""
+	print("histogramme")
+	nlin = ncol = 512
+	sz = nlin * ncol
+	d = kernel_initiate(ksrc_hist,
+					 [ uint8_t * sz, uint32_t * 256],
+					 "RX",
+					 f"-DNLIN={nlin} -DNCOL={ncol}"
+					 , dev_kind="GPU"
+					 , kname="histogram")
+	if 'error' in d:
+		print('probleme de compilation')
+		print(d['error'])
+	else:
+		GSZ = [nlin,ncol]
+		LSZ = [16,16]
+		assert all(g%l==0 for (g,l) in zip(GSZ,LSZ)), (GSZ,LSZ)
+		[[h1,_],[h2,_]] = d['params']
+		for i in range(len(h1)):
+			h1[i] = randrange(256)
+		for i in range(len(h2)):
+			h2[i] = 0
+		kernel_run(d, GSZ, [None,None], local_work_size=LSZ)
+		if sum(h2) == len(h1):
+			print('OK')
+		else:
+			print('KO')
+		
+	
+	kernel_terminate(d)
+
+if False:
 	kl = get_kernels(ksrc)
 	
 	n = 21
