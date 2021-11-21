@@ -425,19 +425,19 @@ clErrorCodes = [
 "LINK_PROGRAM_FAILURE",#                     -17
 "DEVICE_PARTITION_FAILED",#                  -18
 "KERNEL_ARG_INFO_NOT_AVAILABLE",#            -19
-	] + [f"*** UNKNOWN ERROR CODE -{i} ***" for i in range(20,30)] + [
+	] + [f"UNKNOWN_ERROR_CODE-{i}" for i in range(20,30)] + [
 "INVALID_VALUE",#                            -30
 "INVALID_DEVICE_TYPE",#                      -31
 "INVALID_PLATFORM",#                         -32
-	] + [f"*** UNKNOWN ERROR CODE -{i} ***" for i in range(33,54)] + [
+	] + [f"UNKNOWN_ERROR_CODE-{i}" for i in range(33,54)] + [
 "INVALID_WORK_GROUP_SIZE",#                  -54
 "INVALID_WORK_ITEM_SIZE",#                   -55
-	]
+	] + [f"UNKNOWN_ERROR_CODE-{i}" for i in range(56,129)]
 assert clErrorCodes[30] == 'INVALID_VALUE' and clErrorCodes[55] == 'INVALID_WORK_ITEM_SIZE'
 
 def gatherPlatformInfo(p_addr, verbose=True):
 	#
-	result = {}
+	result = {'id': p_addr}
 	pf_ext = []
 	for k_i,k in enumerate(cl_platform_info_TAGS, start=cl_platform_info_START):
 		buf_sz.value = 10000000
@@ -452,12 +452,13 @@ def gatherPlatformInfo(p_addr, verbose=True):
 				pf_ext = s.split()
 				assert all(e.isidentifier() and e.startswith('cl_') for e in pf_ext)
 		elif r == CL_INVALID_VALUE:
-			s = '!!! INVALID VALUE !!!'
+			s = 'CL_INVALID_VALUE'
 		elif r == CL_INVALID_PLATFORM:
 			print("CL_INVALID_PLATFORM")
 			return
 		else:
-			assert False
+			print(clErrorCodes[-r] if -128 <= r <= -1 else f"???? {r} ????")
+			assert False, r
 		print(f'{k} : {s}')
 		result[k] = s
 	result['devices'] = devices = []  
@@ -470,7 +471,7 @@ def gatherPlatformInfo(p_addr, verbose=True):
 	for i in range(ndevs.value):
 		print(f'** device {i} **')
 		d_addr = devices_vec[i]
-		dev = {}
+		dev = {'id': d_addr}
 		for k_i, (k,fn) in enumerate(cl_device_info_TAGS, start=cl_device_info_START):
 			if k.startswith('MAX_WORK_'):
 				_ = 2+2
@@ -480,8 +481,10 @@ def gatherPlatformInfo(p_addr, verbose=True):
 				assert buf_sz.value >= 0 and buf_sz.value <= 1024
 			else:
 				assert buf_sz.value == 10000000
-				buf1024[:32] = b'!!!! clGetDeviceInfo FAILED !!!!'
-				buf_sz.value = 32
+				smsg = clErrorCodes[-r] if -128 <= r <= -1 else f"???? {r} ????"
+				bmsg = bytes(smsg, encoding='cp1250')
+				buf1024[:len(bmsg)] = bmsg
+				buf_sz.value = len(bmsg)
 				fn = None
 			#s = buf1024.value[:buf_sz.value]
 			#assert s == b'' or s[-1] != 0, s
@@ -489,10 +492,11 @@ def gatherPlatformInfo(p_addr, verbose=True):
 			assert isinstance(s,bytes)
 			if fn is not None:
 				s = fn(s)
-			if k == 'EXTENSIONS':
+			if k == 'EXTENSIONS' and r == 0:
 				dv_ext = s.split()
 				assert all(e.isidentifier() and e.startswith('cl_') for e in dv_ext)
-				assert set(pf_ext) <= set(dv_ext)
+				if not( set(pf_ext) <= set(dv_ext) ):
+					dev['EXTENSIONS_of_PTF_unsupported'] = ' '.join(e for e in pf_ext if e not in dv_ext)
 				s = ' '.join(e for e in dv_ext if e not in pf_ext)
 			if verbose or k in {
 					'ENDIAN_LITTLE',
@@ -559,6 +563,11 @@ uint64_t = ctypes.c_uint64
 float_t = ctypes.c_float
 double_t = ctypes.c_double
 
+def get_device(dev_kind):
+	"""
+	None : dans ptf_0, donne le 1ier CPU, puis ACC, puis CPU
+	"""
+	pass
 
 def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, params=None, kname=None):
 	""" exemple sur vecadd :
@@ -607,6 +616,7 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 	e = cl_int(-1000)
 	e_REF = _R(e)
 	kernelSource = (ctypes.c_char_p * 1)(ksrc.encode('cp1250'))
+	# plateform / device
 	cpPlatform = (cl_platform_id * 1)()
 	err = clGetPlatformIDs(1, cpPlatform, None)
 	assert err == 0
@@ -617,14 +627,25 @@ def kernel_initiate(ksrc, arg_types, arg_kinds, macros=None, dev_kind = None, pa
 		if err == CL_DEVICE_NOT_FOUND:
 			dev_ty = CL_DEVICE_TYPE_ACCELERATOR
 			err = clGetDeviceIDs(cpPlatform[0], dev_ty, 1, device_id, None)
-	elif dev_kind in ("CPU","GPU") or dev_kind.startswith("ACC"):
+	elif isinstance(dev_kind,str):
+		assert dev_kind in ("CPU","GPU") or dev_kind.startswith("ACC"), dev_kind
 		dev_ty = CL_DEVICE_TYPE_CPU if dev_kind=="CPU" else \
 				 CL_DEVICE_TYPE_GPU if dev_kind=="GPU" else \
 				 CL_DEVICE_TYPE_ACCELERATOR
 		err = clGetDeviceIDs(cpPlatform[0], dev_ty, 1, device_id, None)
+	elif isinstance(dev_kind,list):
+		[ptf_num, dev_num] = dev_kind
+		ptf_d = platforms_inf[ptf_num]
+		dev_d = ptf_d['devices'][dev_num]
+		cpPlatform[0] = ptf_d['id']
+		device_id[0] = dev_d['id']
+		dev_ty = CL_DEVICE_TYPE_CPU if dev_d['TYPE']==["CPU"] else \
+				 CL_DEVICE_TYPE_GPU if dev_d['TYPE']==["GPU"] else \
+				 CL_DEVICE_TYPE_ACCELERATOR
 	else:
-		assert False, "bad dev_kind"
+		assert False, f"kernel_initiate : bad dev_kind : {dev_kind}"
 	assert err == 0, err
+	##
 	context = clCreateContext(None, 1, device_id, NULL_CALLBACK_context, None, e_REF)
 	assert e.value == 0
 	queue = clCreateCommandQueue(context, device_id[0], 0, e_REF);
@@ -844,15 +865,16 @@ if ICD_status == 0:
 		p_addr = platforms_vec[p]
 		platforms_inf[p] = gatherPlatformInfo(p_addr, verbose=False)
 elif ICD_status == -1001:
-	printf(f"WARNING : bad return value of clGetPlatformIDs : {ICD_status}")
-	platform_inf = gatherPlatformInfo(None)
+	print(f"WARNING : bad return value of clGetPlatformIDs : {ICD_status}")
+	platform_inf = [gatherPlatformInfo(None)]
 else:
-	printf(f"ERREUR : bad return value of clGetPlatformIDs : {ICD_status}")
+	print(f"ERREUR : bad return value of clGetPlatformIDs : {ICD_status}")
 	assert False
 		
 if __name__ == "__main__": # vecAdd
-	from math import ceil, cos, prod, sin
+	from math import ceil, cos, prod, sin # prod uniquement avec python recent
 	from random import randrange, random
+	prod = lambda p: p[0]*p[1]
 	
 	ksrc = """
 #define FLOAT float                                     
@@ -880,150 +902,35 @@ __kernel void histogram(__global uchar data[NLIN][NCOL], __global int histogram[
 #endif
 }
 	"""
-	print("histogramme")
-	nlin = ncol = 512
-	sz = nlin * ncol
-	d = kernel_initiate(ksrc_hist,
+	for ptf_i, pf in enumerate(platforms_inf):
+		print('*'*16,' platform : ', pf['NAME'], ' ','*'*16)
+		for dev_i, dev in enumerate(pf['devices']):
+			print('*'*8,' device : ', dev['TYPE'], dev['NAME'], ' ','*'*8)
+			[dev_type] = dev['TYPE']
+			print("histogramme")
+			nlin = ncol = 512
+			sz = nlin * ncol
+			d = kernel_initiate(ksrc_hist,
 					 [ uint8_t * sz, uint32_t * 256],
 					 "RX",
 					 f"-DNLIN={nlin} -DNCOL={ncol}"
-					 , dev_kind="GPU"
+					 , dev_kind= [ptf_i, dev_i] # dev_type
 					 , kname="histogram")
-	if 'error' in d:
-		print('probleme de compilation')
-		print(d['error'])
-	else:
-		GSZ = [nlin,ncol]
-		LSZ = [16,16]
-		assert all(g%l==0 for (g,l) in zip(GSZ,LSZ)), (GSZ,LSZ)
-		[[h1,_],[h2,_]] = d['params']
-		for i in range(len(h1)):
-			h1[i] = randrange(256)
-		for i in range(len(h2)):
-			h2[i] = 0
-		kernel_run(d, GSZ, [None,None], local_work_size=LSZ)
-		if sum(h2) == len(h1):
-			print('OK')
-		else:
-			print('KO')
-		
-	
-	kernel_terminate(d)
-
-if False:
-	kl = get_kernels(ksrc)
-	
-	n = 21
-	
-	n_out = n+1
-	
-	work_dim = 1
-	## Number of work items in each local work group
-	#localSize = 64
-	localSize = (size_t * work_dim)(64)
-	## Number of total work items - localSize must be devisor
-	#globalSize = ceil(n/localSize)*localSize
-	globalSize = (size_t * work_dim)(ceil(n/localSize[0])*localSize[0])
-	global_size = (size_t * work_dim)(n)
-	
-	nb_bytes = n * 4   ## ctypes.sizeof(h_a)
-	h_a = (ctypes.c_float * n)(*[sin(i)*sin(i) for i in range(n)])
-	h_b = (ctypes.c_float * n)(*[cos(i)*cos(i) for i in range(n)])
-	read_arrays = [h_a, h_b]
-	h_c = (ctypes.c_float * n_out)() # all 0.0
-	write_arrays = [h_c]
-	e = cl_int(-1000)
-	e_REF = _R(e)
-	kernelSource = (ctypes.c_char_p * 1)(ksrc.encode('cp1250'))
-	cpPlatform = (cl_platform_id * 1)()
-	err = clGetPlatformIDs(1, cpPlatform, None)
-	assert err == 0
-	device_id = (cl_device_id * 1)()
-	err = clGetDeviceIDs(cpPlatform[0], CL_DEVICE_TYPE_GPU, 1, device_id, None)
-	if err == CL_DEVICE_NOT_FOUND:
-		err = clGetDeviceIDs(cpPlatform[0], CL_DEVICE_TYPE_ACCELERATOR, 1, device_id, None)
-	assert err == 0, err
-	context = clCreateContext(None, 1, device_id, NULL_CALLBACK_context, None, e_REF)
-	assert e.value == 0
-	queue = clCreateCommandQueue(context, device_id[0], 0, e_REF);
-	assert e.value == 0
-	program = clCreateProgramWithSource(context, 1, kernelSource, None, e_REF)
-	assert e.value == 0
-	err = clBuildProgram(program, 0, None, None, NULL_CALLBACK_program, None)
-	assert err == 0
-	kernel = clCreateKernel(program, b"vecAdd", e_REF)
-	assert e.value == 0
-	d_a = clCreateBuffer(context, CL_MEM_READ_ONLY, nb_bytes, None, e_REF)
-	assert e.value == 0
-	d_b = clCreateBuffer(context, CL_MEM_READ_ONLY, nb_bytes, None, e_REF)
-	assert e.value == 0
-	read_buffers = [d_a,d_b]
-	d_c = clCreateBuffer(context, CL_MEM_WRITE_ONLY, n_out*4, None, e_REF)
-	assert e.value == 0
-	write_buffers = [d_c]
-	if False: # original
-		err  = clEnqueueWriteBuffer(queue, d_a, CL_TRUE, 0, nb_bytes, h_a, 0, None, None)
-		err |= clEnqueueWriteBuffer(queue, d_b, CL_TRUE, 0, nb_bytes, h_b, 0, None, None)
-		assert err == 0
-	err   = clSetKernelArg(kernel, 0, ctypes.sizeof(cl_mem), _R(cl_mem(d_a)))
-	err  |= clSetKernelArg(kernel, 1, ctypes.sizeof(cl_mem), _R(cl_mem(d_b)))
-	err  |= clSetKernelArg(kernel, 2, ctypes.sizeof(cl_mem), _R(cl_mem(d_c)))
-	err  |= clSetKernelArg(kernel, 3, ctypes.sizeof(cl_uint), _R(cl_uint(n)))
-	assert err == 0 ## -38 == CL_INVALID_MEM_OBJECT
-	
-	### BEGIN COPRO
-	
-	if True: # nouveau
-		err = 0
-		for buf,arr in zip(read_buffers,read_arrays):
-			err |= clEnqueueWriteBuffer(queue, buf, CL_TRUE, 0, ctypes.sizeof(arr), arr, 0, None, None)
-	else:
-		err  = clEnqueueWriteBuffer(queue, d_a, CL_TRUE, 0, nb_bytes, h_a, 0, None, None)
-		err |= clEnqueueWriteBuffer(queue, d_b, CL_TRUE, 0, nb_bytes, h_b, 0, None, None)
-	assert err == 0
-	#err = clEnqueueNDRangeKernel(queue, kernel, 1, None, _R(size_t(globalSize)), _R(size_t(localSize)), 0, None, None)
-	#err = clEnqueueNDRangeKernel(queue, kernel, work_dim, None, globalSize, localSize, 0, None, None)
-	err = clEnqueueNDRangeKernel(queue, kernel, len(globalSize), None, globalSize, None, 0, None, None)
-	assert err == 0
-	err = clFinish(queue)
-	assert err == 0
-	if True:
-		err = 0
-		for buf,arr in zip(write_buffers,write_arrays):
-			err |= clEnqueueReadBuffer(queue, buf, CL_TRUE, 0, ctypes.sizeof(arr), arr, 0, None, None)
-	else:
-		err = clEnqueueReadBuffer(queue, d_c, CL_TRUE, 0, nb_bytes, h_c, 0, None, None)
-	assert err == 0
-	
-	### END COPRO
-	
-	delta = [h_c[i]-1 for i in range(n_out)]
-	print(delta)
-	###
-	err = 0
-	if False:
-		for d_x in read_buffers + write_buffers:
-			err |= clReleaseMemObject(d_x)
-	elif not Kalray:
-		err |= clReleaseMemObject(d_a)
-		err |= clReleaseMemObject(d_b)
-		err |= clReleaseMemObject(d_c) ### kalray : blocage
-	else:
-		#err |= clReleaseMemObject(d_c)
-		err |= clReleaseMemObject(d_b)
-		err |= clReleaseMemObject(d_a)
-	assert err == 0
-	err = clReleaseKernel(kernel)
-	assert err == 0
-
-	#err  = clReleaseMemObject(d_c)
-	#assert err == 0
-
-	if not Kalray:
-		err = clReleaseProgram(program)
-		assert err == 0
-	err = clReleaseCommandQueue(queue)
-	assert err == 0
-	err = clReleaseContext(context)
-	assert err == 0
-	print('done')
+			if 'error' in d:
+				print('probleme de compilation')
+				print(d['error'])
+			else:
+				GSZ = [nlin,ncol]
+				LSZ = [16,16]
+				assert all(g%l==0 for (g,l) in zip(GSZ,LSZ)), (GSZ,LSZ)
+				[[h1,_],[h2,_]] = d['params']
+				for i in range(len(h1)):
+					h1[i] = randrange(256)
+				for i in range(len(h2)):
+					h2[i] = 0
+				kernel_run(d, GSZ, [None,None], local_work_size=LSZ)
+				if sum(h2) == len(h1):
+					print('OK')
+				else:
+					print('KO')
+			kernel_terminate(d)
