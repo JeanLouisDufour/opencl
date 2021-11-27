@@ -12,6 +12,32 @@ __kernel void histogram_1(__global uchar data[512][512], __global int histogram[
 #endif
 }
 
+__kernel void histogram_BAD(__global uchar image[512][512], __global int histogram[256]) {
+	int gid0 = get_global_id(0), gid1 = get_global_id(1);
+	histogram[image[gid0][gid1]] += 1;
+}
+
+__kernel void histogram_GOOD(__global uchar image[512][512], __global int histogram[256]) {
+	int gid0 = get_global_id(0), gid1 = get_global_id(1);
+	atomic_inc( &histogram[image[gid0][gid1]] );
+}
+
+__kernel void resize_22_(__global uchar src[512][512], __global uchar dst[256][256]) {
+	uint gid0 = get_global_id(0), gid1 = get_global_id(1), sum = 0;
+	for(int i = 0; i <= 1; i++)
+		for(int j = 0; j <= 1; i++)
+			sum += src[2*gid0+i][2*gid1+j];
+	dst[gid0][gid1] = sum/4;
+}
+
+__kernel void resize_22(__global uchar src[512][512], __global uchar dst[256][256]) {
+	uint gid0 = get_global_id(0), gid1 = get_global_id(1);
+	dst[gid0][gid1] = (src[2*gid0  ][2*gid1  ]
+					+  src[2*gid0  ][2*gid1+1]
+					+  src[2*gid0+1][2*gid1  ]
+					+  src[2*gid0+1][2*gid1+1] ) / 4;
+}
+
 #define LOCALHIST
 
 __kernel 

@@ -41,7 +41,7 @@ assert div >= 16
 version = 1
 
 if version == 1:
-	kname = "histogram_1"
+	kname = "histogram_GOOD"
 	GSZ = [512,512] # 8192 # 8193 -> erreur -54
 	LSZ = [64,64] # CPU : max 8192
 	LSZ = [16,16] # GPU : max 512
@@ -51,7 +51,7 @@ if version == 1:
 					 [ uint8_t * sz, uint32_t * 256],
 					 "RX",
 					 f"-DNLIN={image.shape[0]} -DNCOL={image.shape[1]} -DNWI={NWI}"
-					 , dev_kind="GPU"
+					 , dev_kind="CPU"
 					 , kname=kname
 	)
 
@@ -81,7 +81,7 @@ if True:
 		[[h1,_],[h2,_],[h3,_]] = d['params']
 	h1[:] = image.reshape((sz,))  ### dans la vraie vie, une nouvelle image a chaque cycle
 	h2_init = np.zeros((256,), dtype="uint8")
-	nb_iter = 2
+	nb_iter = 1
 	print('start',nb_iter)
 	tic = time.perf_counter()
 	for j in range(nb_iter):

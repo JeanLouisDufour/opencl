@@ -237,7 +237,7 @@ assert bytes(memoryview(NULL_CALLBACK_context)) == b'\x00\x00\x00\x00\x00\x00\x0
 CL_CALLBACK_program = ctypes.CFUNCTYPE(None, cl_program, ctypes.c_void_p)
 def DFLT_CALLBACK_program(a,b): print("default CALLBACK program\n")
 DFLT_CALLBACK_program = CL_CALLBACK_program(DFLT_CALLBACK_program)
-NULL_CALLBACK_program = ctypes.cast(None, CL_CALLBACK_program)
+NULL_CALLBACK_program = ctypes.cast(None, CL_CALLBACK_program) # ou CL_CALLBACK_program(0)
 assert bytes(memoryview(NULL_CALLBACK_program)) == b'\x00\x00\x00\x00\x00\x00\x00\x00'
 
 ###### https://stackoverflow.com/questions/2962281/what-is-the-pythonic-way-to-setattr-for-a-module
